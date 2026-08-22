@@ -127,6 +127,17 @@ inputs:
     description: 'Dispatch the configured handoff workflow after authorization succeeds.'
     required: false
     default: 'false'
+  preflight_spec:
+    description: >-
+      JSON dependency specification for runner preflight. Supports
+      required_commands, min_versions, version_args, required_python_packages,
+      and fail_on_missing. Empty skips capability checks.
+    required: false
+    default: ''
+  preflight_gate_level:
+    description: 'Label shown in the preflight summary, such as low, standard, or high.'
+    required: false
+    default: 'standard'
 
 outputs:
   authorized:
@@ -168,10 +179,26 @@ outputs:
   handoff_ref:
     description: 'Git ref selected for the handoff.'
     value: ${{ steps.gate.outputs.handoff_ref }}
+  preflight_satisfied:
+    description: '`true` when every declared runner requirement was met.'
+    value: ${{ steps.preflight.outputs.preflight_satisfied }}
+  preflight_missing:
+    description: 'Comma-separated list of unmet runner requirements.'
+    value: ${{ steps.preflight.outputs.preflight_missing }}
 
 runs:
   using: composite
   steps:
+    - name: Verify runner capabilities
+      id: preflight
+      shell: bash
+      env:
+        PREFLIGHT_SPEC: ${{ inputs.preflight_spec }}
+        PREFLIGHT_GATE_LEVEL: ${{ inputs.preflight_gate_level }}
+      run: |
+        set -euo pipefail
+        python3 "${GITHUB_ACTION_PATH}/src/preflight.py"
+
     - name: Authorize actor
       id: gate
       shell: bash

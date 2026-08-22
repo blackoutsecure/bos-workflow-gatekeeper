@@ -45,6 +45,7 @@ authorized.
     - [Version pinning](#version-pinning)
   - [⚙️ Action inputs](#️-action-inputs)
   - [📤 Action outputs](#-action-outputs)
+  - [🧰 Runner preflight](#-runner-preflight)
   - [🔗 Workflow handoff](#-workflow-handoff)
   - [🔒 Tokens and credentials](#-tokens-and-credentials)
   - [🧮 Decision semantics](#-decision-semantics)
@@ -151,6 +152,8 @@ reproducible supply chain:
 | `handoff_repository` | *(none)* | Repository receiving the workflow dispatch; defaults to the current repository. |
 | `handoff_ref` | *(none)* | Git ref for the handoff workflow; defaults to the current ref. |
 | `dispatch_handoff` | `false` | Dispatch the configured handoff workflow after authorization succeeds. |
+| `preflight_spec` | *(none)* | JSON dependency specification for runner preflight. Supports required_commands, min_versions, version_args, required_python_packages, and fail_on_missing. Empty skips capability checks. |
+| `preflight_gate_level` | `standard` | Label shown in the preflight summary, such as low, standard, or high. |
 <!-- END action-inputs -->
 
 > The table above is auto-generated from `action.yml` by
@@ -175,7 +178,32 @@ reproducible supply chain:
 | `handoff_workflow` | Workflow file or ID selected for the handoff. |
 | `handoff_repository` | Repository selected for the handoff. |
 | `handoff_ref` | Git ref selected for the handoff. |
+| `preflight_satisfied` | `true` when every declared runner requirement was met. |
+| `preflight_missing` | Comma-separated list of unmet runner requirements. |
 <!-- END action-outputs -->
+
+## 🧰 Runner preflight
+
+Set `preflight_spec` when the gated operation depends on tools or Python
+distributions being available. Preflight runs before authorization and does
+not receive the authorization token. A missing requirement fails before the
+workflow can continue; set `fail_on_missing` to `false` in the spec for a
+warning-only rollout.
+
+```yaml
+- uses: blackoutsecure/bos-workflow-gatekeeper@v1
+  with:
+    actor: ${{ github.triggering_actor }}
+    organization: ${{ github.repository_owner }}
+    token: ${{ secrets.GATEKEEPER_AUTHZ_PAT }}
+    preflight_gate_level: high
+    preflight_spec: >-
+      {"required_commands":["docker","jq"],"min_versions":{"docker":"24.0"},"required_python_packages":["requests>=2.31"]}
+```
+
+The hub's standalone preflight action remains available for larger workflows
+that need runner checks independent of actor authorization. The Marketplace
+action includes this small capability for callers that want one portable step.
 
 ## 🔗 Workflow handoff
 
