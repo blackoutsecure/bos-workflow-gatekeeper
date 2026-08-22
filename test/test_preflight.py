@@ -51,3 +51,17 @@ def test_missing_requirement_can_warn(monkeypatch, tmp_path):
     )
     assert preflight.main() == 0
     assert "preflight_satisfied=false" in output.read_text()
+
+
+def test_preflight_rejects_unsafe_command_spec(monkeypatch, tmp_path):
+    set_outputs(monkeypatch, tmp_path)
+    monkeypatch.setenv(
+        "PREFLIGHT_SPEC",
+        json.dumps(
+            {
+                "required_commands": ["python3"],
+                "version_args": {"python3": ["-c", "print('unsafe')"]},
+            }
+        ),
+    )
+    assert preflight.main() == 1

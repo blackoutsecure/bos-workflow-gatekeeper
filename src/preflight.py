@@ -11,6 +11,9 @@ import subprocess
 
 from runtime import append_github_output, append_step_summary
 
+COMMAND_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+FORBIDDEN_VERSION_ARGS = {"-c", "-e", "--eval", "--exec", "--command"}
+
 
 def parse_version(text: str) -> tuple[int, ...]:
     numbers = re.findall(r"\d+", text or "")
@@ -52,6 +55,14 @@ def main() -> int:
     packages = spec.get("required_python_packages") or []
     version_args = spec.get("version_args") or {}
     fail_on_missing = spec.get("fail_on_missing", True) is not False
+    for command in commands:
+        if not isinstance(command, str) or not COMMAND_NAME.fullmatch(command):
+            print("::error title=Preflight::required_commands must contain executable names only.")
+            return 1
+    for command, args in version_args.items():
+        if not isinstance(args, list) or any(str(argument) in FORBIDDEN_VERSION_ARGS for argument in args):
+            print(f"::error title=Preflight::Unsafe version_args for command: {command}")
+            return 1
     missing: list[str] = []
     rows = [
         "### Gatekeeper preflight",
