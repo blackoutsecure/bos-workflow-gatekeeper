@@ -20,10 +20,12 @@ inputs:
       Login to authorize. Use `github.triggering_actor`, not `github.actor` —
       on a re-run `actor` stays the original dispatcher while
       `triggering_actor` is whoever pressed re-run.
-    required: true
+    required: false
+    default: ''
   organization:
     description: 'Organization login that owns the repository.'
-    required: true
+    required: false
+    default: ''
   token:
     description: >-
       Credential for organization, team, and repository lookups. Prefer a
@@ -138,6 +140,10 @@ inputs:
     description: 'Label shown in the preflight summary, such as low, standard, or high.'
     required: false
     default: 'standard'
+  preflight_only:
+    description: 'Run only runner preflight and skip actor authorization. Intended for workflow orchestration.'
+    required: false
+    default: 'false'
 
 outputs:
   authorized:
@@ -195,12 +201,14 @@ runs:
       env:
         PREFLIGHT_SPEC: ${{ inputs.preflight_spec }}
         PREFLIGHT_GATE_LEVEL: ${{ inputs.preflight_gate_level }}
+        PREFLIGHT_ONLY: ${{ inputs.preflight_only }}
       run: |
         set -euo pipefail
         python3 "${GITHUB_ACTION_PATH}/src/preflight.py"
 
     - name: Authorize actor
       id: gate
+      if: inputs.preflight_only != 'true'
       shell: bash
       env:
         ACTOR: ${{ inputs.actor }}

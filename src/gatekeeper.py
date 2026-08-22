@@ -88,6 +88,8 @@ def write_summary(lines: list[str]) -> None:
 
 
 def main() -> int:
+    if _bool("PREFLIGHT_ONLY", False):
+        return 0
     event_name = os.environ.get("EVENT_NAME", "")
     restrict = _csv("RESTRICT_TO_EVENTS")
     fail_closed = _bool("FAIL_CLOSED", True)

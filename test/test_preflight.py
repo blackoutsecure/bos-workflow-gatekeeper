@@ -2,6 +2,7 @@
 
 import json
 
+import gatekeeper
 import preflight
 
 
@@ -65,3 +66,8 @@ def test_preflight_rejects_unsafe_command_spec(monkeypatch, tmp_path):
         ),
     )
     assert preflight.main() == 1
+
+
+def test_preflight_only_skips_authorization(monkeypatch):
+    monkeypatch.setenv("PREFLIGHT_ONLY", "true")
+    assert gatekeeper.main() == 0

@@ -154,6 +154,7 @@ reproducible supply chain:
 | `dispatch_handoff` | `false` | Dispatch the configured handoff workflow after authorization succeeds. |
 | `preflight_spec` | *(none)* | JSON dependency specification for runner preflight. Supports required_commands, min_versions, version_args, required_python_packages, and fail_on_missing. Empty skips capability checks. |
 | `preflight_gate_level` | `standard` | Label shown in the preflight summary, such as low, standard, or high. |
+| `preflight_only` | `false` | Run only runner preflight and skip actor authorization. Intended for workflow orchestration. |
 <!-- END action-inputs -->
 
 > The table above is auto-generated from `action.yml` by

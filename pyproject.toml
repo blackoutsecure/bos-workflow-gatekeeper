@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bos-workflow-gatekeeper"
-version = "1.0.0"
+version = "1.0.2"
 description = "Fail-closed authorization for GitHub Actions — resolve organization role, team membership, repository permission, and enterprise ownership, then deny unauthorized runs."
 readme = "README.md"
 requires-python = ">=3.10"
