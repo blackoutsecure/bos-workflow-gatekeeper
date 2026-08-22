@@ -49,6 +49,7 @@ authorized.
   - [🔒 Tokens and credentials](#-tokens-and-credentials)
   - [🧮 Decision semantics](#-decision-semantics)
   - [⚠️ Runtime and repository notes](#️-runtime-and-repository-notes)
+  - [🧪 Hub development validation](#-hub-development-validation)
   - [💻 Local usage (tests)](#-local-usage-tests)
   - [🤝 Contributing](#-contributing)
   - [📜 License](#-license)
@@ -279,6 +280,23 @@ denial is still reported in the outputs and the job summary.
   Cedar. For deployment approval use GitHub Environments and native
   deployment protection rules. This action authorizes an actor and stops the
   job.
+
+## 🧪 Hub development validation
+
+The hub owns runner and toolchain preflight because those checks describe the
+workflow being run, not the actor being authorized. This action intentionally
+does not execute arbitrary caller commands as part of authorization.
+
+For manual validation of the development branch through the hub, run
+[`hub-dev-validation.yml`](.github/workflows/hub-dev-validation.yml). It calls
+the hub's reusable security, action-test, and Marketplace workflows directly.
+It is manual-only and does not call a kicker or dispatch this repository's own
+workflow, so it cannot recursively trigger itself.
+
+Consumer repositories should use the managed kicker workflows for normal event
+routing. Do not add a gatekeeper kicker to this repository: the Marketplace
+action is the authorization primitive, while the hub owns the central
+orchestration front door.
 
 ## 💻 Local usage (tests)
 
