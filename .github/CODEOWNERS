@@ -1,0 +1,4 @@
+# CODEOWNERS for bos-workflow-gatekeeper
+#
+# Repo-wide default — every PR pings the security team.
+* @blackoutsecure/security

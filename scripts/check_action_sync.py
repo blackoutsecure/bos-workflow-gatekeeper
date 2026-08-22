@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Drift guard between ``action.yml`` and ``pyproject.toml``.
+
+Run in CI on every PR to catch bugs where metadata is bumped in one
+file and forgotten in the other. Asserts:
+
+  * ``action.yml::author``         == ``pyproject.toml::project.authors[0].name``
+  * ``action.yml::description``    <= 125 chars
+  * ``action.yml::runs.using``     == 'composite'
+  * ``action.yml::branding.color`` is a Marketplace enum value
+  * ``action.yml::branding.icon``  is non-empty
+  * ``pyproject.toml::project.name`` matches expected package name
+  * ``pyproject.toml::project.version`` matches ``src/_version.py::__version__``
+
+Pure stdlib + PyYAML. Exits 0 on success, 1 on drift, with a
+human-readable report.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    sys.stderr.write("PyYAML missing; install dev deps: pip install -e '.[dev]'\n")
+    sys.exit(2)
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+ACTION_YML = REPO_ROOT / "action.yml"
+PYPROJECT = REPO_ROOT / "pyproject.toml"
+VERSION_PY = REPO_ROOT / "src" / "_version.py"
+
+PACKAGE_NAME = "bos-workflow-gatekeeper"
+
+DESC_MAX = 125
+BRANDING_COLORS = {
+    "white", "yellow", "blue", "green", "orange", "red", "purple", "gray-dark",
+}
+
+
+def _read_pyproject_author(text: str) -> str:
+    m = re.search(
+        r'^\s*authors\s*=\s*\[\s*\{\s*name\s*=\s*"([^"]+)"',
+        text,
+        re.MULTILINE,
+    )
+    return m.group(1).strip() if m else ""
+
+
+def _read_pyproject_field(text: str, field: str) -> str:
+    m = re.search(
+        rf'^\s*{re.escape(field)}\s*=\s*["\']([^"\']+)["\']',
+        text,
+        re.MULTILINE,
+    )
+    return m.group(1).strip() if m else ""
+
+
+def _read_python_version(text: str) -> str:
+    m = re.search(r'^\s*__version__\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
+def main() -> int:
+    failures: list[str] = []
+
+    action = yaml.safe_load(ACTION_YML.read_text())
+    pyproject_text = PYPROJECT.read_text()
+    version_text = VERSION_PY.read_text()
+    package_name = _read_pyproject_field(pyproject_text, "name")
+    package_version = _read_pyproject_field(pyproject_text, "version")
+    source_version = _read_python_version(version_text)
+
+    if package_name != PACKAGE_NAME:
+        failures.append(
+            f"pyproject.toml::project.name = {package_name!r}, expected {PACKAGE_NAME!r}"
+        )
+    if not package_version:
+        failures.append("pyproject.toml: missing project.version")
+    elif not source_version:
+        failures.append("src/_version.py: missing __version__")
+    elif package_version != source_version:
+        failures.append(
+            f"version drift: pyproject.toml={package_version!r} "
+            f"!= src/_version.py={source_version!r}"
+        )
+
+    action_author = (action.get("author") or "").strip()
+    py_author = _read_pyproject_author(pyproject_text)
+    if not action_author:
+        failures.append("action.yml: missing top-level `author`")
+    elif not py_author:
+        failures.append("pyproject.toml: could not find `authors[0].name`")
+    elif action_author != py_author:
+        failures.append(
+            f"author drift: action.yml={action_author!r} "
+            f"!= pyproject.toml={py_author!r}"
+        )
+
+    action_desc = (action.get("description") or "").strip()
+    if not action_desc:
+        failures.append("action.yml: missing top-level `description`")
+    elif len(action_desc) > DESC_MAX:
+        failures.append(
+            f"action.yml::description is {len(action_desc)} chars "
+            f"(> {DESC_MAX}); Marketplace card view will truncate"
+        )
+
+    runs_using = (action.get("runs") or {}).get("using")
+    if runs_using != "composite":
+        failures.append(f"action.yml::runs.using = {runs_using!r}, expected 'composite'")
+
+    branding = action.get("branding") or {}
+    color = branding.get("color")
+    icon = branding.get("icon")
+    if color not in BRANDING_COLORS:
+        failures.append(
+            f"action.yml::branding.color = {color!r}; allowed: {sorted(BRANDING_COLORS)}"
+        )
+    if not icon:
+        failures.append("action.yml::branding.icon is empty")
+
+    if failures:
+        print(f"check_action_sync: {len(failures)} drift(s) found:")
+        for failure in failures:
+            print(f"  - {failure}")
+        return 1
+
+    print(
+        f"check_action_sync: OK "
+        f"(package={package_name!r}@{package_version}, author={action_author!r}, "
+        f"desc={len(action_desc)} chars, "
+        f"runs.using={runs_using!r}, branding={color}/{icon})"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

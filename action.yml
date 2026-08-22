@@ -1,0 +1,141 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Blackout Secure Workflow Gatekeeper
+# Copyright © 2025-2026 Blackout Secure
+# Licensed under Apache License 2.0
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+name: 'Blackout Secure Workflow Gatekeeper'
+# MP010: keep <= 125 chars; full feature list lives in README.md.
+description: >-
+  Fail-closed authorization for GitHub Actions. Deny unauthorized runs by org role, team, repo permission, or enterprise.
+author: 'Blackout Secure'
+
+branding:
+  color: 'orange'
+  icon: 'shield'
+
+inputs:
+  actor:
+    description: >-
+      Login to authorize. Use `github.triggering_actor`, not `github.actor` —
+      on a re-run `actor` stays the original dispatcher while
+      `triggering_actor` is whoever pressed re-run.
+    required: true
+  organization:
+    description: 'Organization login that owns the repository.'
+    required: true
+  token:
+    description: >-
+      Credential for organization, team, and repository lookups. Prefer a
+      GitHub App installation token with `members: read` (short-lived). A PAT
+      with `read:org` also works. The default GITHUB_TOKEN cannot resolve
+      organization role, team membership, or enterprise ownership.
+    required: true
+  repository:
+    description: '`owner/repo` for the repository-permission check. Required only when `required_repo_permission` is set.'
+    required: false
+    default: ''
+  event_name:
+    description: 'Event that triggered the run. Compared against `restrict_to_events`.'
+    required: false
+    default: ''
+  restrict_to_events:
+    description: >-
+      Comma-separated events to enforce on. Other events pass through without
+      any API call. Use `*` to gate every event.
+    required: false
+    default: 'workflow_dispatch'
+  required_teams:
+    description: 'Comma-separated team slugs whose active members are authorized. Empty disables the check.'
+    required: false
+    default: ''
+  required_repo_permission:
+    description: >-
+      Minimum repository permission: `read`, `triage`, `write`, `maintain`, or
+      `admin`. Empty disables the check.
+    required: false
+    default: ''
+  allow_org_admin:
+    description: 'Treat organization owners as authorized.'
+    required: false
+    default: 'true'
+  enterprise_slug:
+    description: >-
+      Enterprise slug for the owner lookup. Empty disables the check. Requires
+      `enterprise_token`; see the README security note before enabling.
+    required: false
+    default: ''
+  enterprise_token:
+    description: >-
+      PAT with `admin:enterprise` belonging to an enterprise owner. No GitHub
+      App installation token can read `enterprise.ownerInfo`. Falls back to
+      `token`.
+    required: false
+    default: ''
+  require_enterprise_owner:
+    description: 'Only enterprise owners are authorized; every other check is ignored as a grant path.'
+    required: false
+    default: 'false'
+  require_all:
+    description: 'Require every enabled check to pass (AND). Default is any (OR).'
+    required: false
+    default: 'false'
+  fail_closed:
+    description: >-
+      Fail the job when the actor is unauthorized or a signal is inconclusive.
+      Set `false` to annotate without enforcing during rollout.
+    required: false
+    default: 'true'
+  summary:
+    description: 'Write the decision table to the job summary.'
+    required: false
+    default: 'true'
+
+outputs:
+  authorized:
+    description: '`true` when the actor satisfied the policy.'
+    value: ${{ steps.gate.outputs.authorized }}
+  reason:
+    description: 'Human-readable explanation of the decision.'
+    value: ${{ steps.gate.outputs.reason }}
+  enforced:
+    description: '`false` when the event was outside `restrict_to_events` and no check ran.'
+    value: ${{ steps.gate.outputs.enforced }}
+  org_role:
+    description: 'admin, member, outside, or unknown.'
+    value: ${{ steps.gate.outputs.org_role }}
+  teams:
+    description: 'Comma-separated matched team slugs.'
+    value: ${{ steps.gate.outputs.teams }}
+  repo_permission:
+    description: 'Resolved repository permission, or unknown.'
+    value: ${{ steps.gate.outputs.repo_permission }}
+  enterprise_owner:
+    description: 'true, false, or unknown.'
+    value: ${{ steps.gate.outputs.enterprise_owner }}
+
+runs:
+  using: composite
+  steps:
+    - name: Authorize actor
+      id: gate
+      shell: bash
+      env:
+        ACTOR: ${{ inputs.actor }}
+        ORGANIZATION: ${{ inputs.organization }}
+        TOKEN: ${{ inputs.token }}
+        REPOSITORY: ${{ inputs.repository || github.repository }}
+        EVENT_NAME: ${{ inputs.event_name || github.event_name }}
+        RESTRICT_TO_EVENTS: ${{ inputs.restrict_to_events }}
+        REQUIRED_TEAMS: ${{ inputs.required_teams }}
+        REQUIRED_REPO_PERMISSION: ${{ inputs.required_repo_permission }}
+        ALLOW_ORG_ADMIN: ${{ inputs.allow_org_admin }}
+        ENTERPRISE_SLUG: ${{ inputs.enterprise_slug }}
+        ENTERPRISE_TOKEN: ${{ inputs.enterprise_token }}
+        REQUIRE_ENTERPRISE_OWNER: ${{ inputs.require_enterprise_owner }}
+        REQUIRE_ALL: ${{ inputs.require_all }}
+        FAIL_CLOSED: ${{ inputs.fail_closed }}
+        SUMMARY: ${{ inputs.summary }}
+      run: |
+        set -euo pipefail
+        python3 "${GITHUB_ACTION_PATH}/src/gatekeeper.py"

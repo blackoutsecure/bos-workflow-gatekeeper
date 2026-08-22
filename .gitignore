@@ -1,0 +1,64 @@
+# Repo-specific ignores live OUTSIDE the hub-managed marker block
+# below. The hub's `common` block already covers OS noise, editor
+# noise, .env*, and private-key patterns — only Python-ecosystem
+# entries need to live here.
+
+# Python
+**/__pycache__/
+**/.venv/
+**/venv/
+**/env/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/.tox/
+**/.nox/
+**/.coverage
+**/coverage.xml
+**/htmlcov/
+*$py.class
+venv/
+env/
+
+# Local scan artefacts (repo-specific)
+*.sarif
+!test/fixtures/**/*.sarif
+/tmp-*
+.bos-scan-cache/
+.hub-automation/
+run_logs.txt
+
+
+# >>> managed-file-sync:common >>>
+# OS + editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Build + dependency output
+node_modules/
+dist/
+build/
+coverage/
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local secrets (never commit these)
+.env
+.env.*
+!.env.example
+# <<< managed-file-sync:common <<<
+
+# >>> managed-file-sync:coverage_artifacts >>>
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+# <<< managed-file-sync:coverage_artifacts <<<

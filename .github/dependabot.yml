@@ -1,0 +1,44 @@
+# Dependabot config for bos-workflow-gatekeeper.
+#
+# This repo follows the Blackout Secure Marketplace Action dev/main
+# split:
+#   * `dev`  — workflow files live here. Dependabot PRs target THIS
+#              branch so CI runs against them.
+#   * `main` — curated Marketplace artifact (no workflow files). Receives
+#              allowlist promotes from `dev` via the hub release pipeline.
+#
+# Dependabot reads its config only from the default branch, so this file
+# is synced on every promote and the `target-branch: dev` override below
+# is what keeps PRs landing on `dev` (where the CI workflows live).
+
+version: 2
+updates:
+
+# >>> managed-file-sync:dependabot_actions >>>
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+# <<< managed-file-sync:dependabot_actions <<<
+
+# >>> managed-file-sync:dependabot_pip >>>
+  - package-ecosystem: pip
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels:
+      - dependencies
+      - python
+# <<< managed-file-sync:dependabot_pip <<<

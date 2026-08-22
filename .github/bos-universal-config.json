@@ -1,0 +1,70 @@
+{
+    "marketplace": {
+        "enabled": true,
+        "target_branch": "main",
+        "allowlist_paths": [
+            "action.yml",
+            "README.md",
+            "LICENSE",
+            "NOTICE",
+            "pyproject.toml",
+            "src"
+        ],
+        "blocked_paths": [
+            ".github/workflows/",
+            ".editorconfig",
+            ".gitattributes",
+            ".gitignore",
+            ".markdownlint.json",
+            ".markdownlint.yaml",
+            "test/"
+        ],
+        "required_paths": [
+            ".github/dependabot.yml",
+            "action.yml",
+            "README.md",
+            "LICENSE",
+            "NOTICE",
+            "pyproject.toml",
+            "src"
+        ],
+        "include_dependabot_config": true,
+        "include_github_metadata": false,
+        "repo_metadata": {
+            "enable": true,
+            "homepage": "https://github.com/marketplace/actions/blackout-secure-workflow-gatekeeper",
+            "ai_enabled": true,
+            "ai_model": "auto",
+            "description_mode": "auto",
+            "description_fallback": "A fail-closed composite GitHub Action that enforces actor authorization by org role, team membership, repository permission, and optional enterprise ownership checks",
+            "use_existing_readme": true,
+            "generate_readme": false,
+            "generate_topics": true,
+            "topics_fallback": "github-actions authorization access-control rbac workflow-security team-based-access enterprise-security composite-action devsecops",
+            "categories": {
+                "primary": "auto",
+                "secondary": "auto"
+            },
+            "marketplace_slug": "blackout-secure-workflow-gatekeeper"
+        }
+    },
+    "managed_file_sync": {
+        "services": [
+            "bos_universal_action_test_kicker",
+            "bos_universal_marketplace_kicker"
+        ]
+    },
+    "action_test": {
+        "python_versions": [
+            "3.10",
+            "3.11",
+            "3.12",
+            "3.13"
+        ],
+        "python_packages": [
+            "-e",
+            ".[dev]"
+        ],
+        "pytest_args": "test/ -v"
+    }
+}
