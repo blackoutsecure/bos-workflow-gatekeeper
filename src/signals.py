@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from policy import UNKNOWN, Signals
@@ -111,6 +112,16 @@ class Client:
             return UNKNOWN
         logins = {str(n.get("login", "")).lower() for n in nodes if isinstance(n, dict)}
         return "true" if actor.lower() in logins else "false"
+
+    def dispatch_workflow(self, repository: str, workflow: str, ref: str) -> bool:
+        """Dispatch a workflow and return whether GitHub accepted the request."""
+        endpoint = (
+            f"{self.api_url}/repos/{urllib.parse.quote(repository, safe='/')}/actions/"
+            f"workflows/{urllib.parse.quote(workflow, safe='')}/dispatches"
+        )
+        payload = json.dumps({"ref": ref}).encode("utf-8")
+        status, _ = self.request(endpoint, data=payload)
+        return status == 204
 
 
 def gather(

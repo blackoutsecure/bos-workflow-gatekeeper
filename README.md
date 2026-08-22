@@ -45,6 +45,7 @@ authorized.
     - [Version pinning](#version-pinning)
   - [⚙️ Action inputs](#️-action-inputs)
   - [📤 Action outputs](#-action-outputs)
+  - [🔗 Workflow handoff](#-workflow-handoff)
   - [🔒 Tokens and credentials](#-tokens-and-credentials)
   - [🧮 Decision semantics](#-decision-semantics)
   - [⚠️ Runtime and repository notes](#️-runtime-and-repository-notes)
@@ -54,9 +55,10 @@ authorized.
 
 ## 📋 Prerequisites
 
-- A credential that can read organization membership. The default
-  `GITHUB_TOKEN` **cannot** resolve organization role, team membership, or
-  enterprise ownership.
+- A credential that can read organization membership when an authorization
+  check is enabled. The token input is optional for pass-through events and
+  caller-only validation, but a gated policy that needs API evidence fails
+  closed without one.
 - A GitHub App with `Organization permissions → Members: Read-only`
   (recommended), or a PAT with `read:org`.
 - For the optional enterprise check only: a PAT with `admin:enterprise`
@@ -140,6 +142,14 @@ reproducible supply chain:
 | `require_all` | `false` | Require every enabled check to pass (AND). Default is any (OR). |
 | `fail_closed` | `true` | Fail the job when the actor is unauthorized or a signal is inconclusive. Set `false` to annotate without enforcing during rollout. |
 | `summary` | `true` | Write the decision table to the job summary. |
+| `caller_workflow` | *(none)* | Expected caller workflow file or workflow name. A mismatch emits a warning but does not fail unless caller_check_fail is true. |
+| `caller_repository` | *(none)* | Expected caller repository as `owner/repo`; empty skips the repository check. |
+| `caller_check_fail` | `false` | Fail when the configured caller identity does not match the running workflow. |
+| `suppress_caller_warning` | `false` | Suppress the notification emitted when the configured caller identity does not match. |
+| `handoff_workflow` | *(none)* | Workflow file or workflow ID to dispatch after authorization. Empty disables handoff. A workflow is required when dispatch_handoff is true. |
+| `handoff_repository` | *(none)* | Repository receiving the workflow dispatch; defaults to the current repository. |
+| `handoff_ref` | *(none)* | Git ref for the handoff workflow; defaults to the current ref. |
+| `dispatch_handoff` | `false` | Dispatch the configured handoff workflow after authorization succeeds. |
 <!-- END action-inputs -->
 
 > The table above is auto-generated from `action.yml` by
@@ -158,7 +168,52 @@ reproducible supply chain:
 | `teams` | Comma-separated matched team slugs. |
 | `repo_permission` | Resolved repository permission, or unknown. |
 | `enterprise_owner` | true, false, or unknown. |
+| `caller_valid` | `true` when the configured caller identity matches; `unknown` when no caller check is configured. |
+| `handoff_requested` | `true` when a handoff workflow was configured. |
+| `handoff_dispatched` | `true` when the handoff workflow was dispatched successfully. |
+| `handoff_workflow` | Workflow file or ID selected for the handoff. |
+| `handoff_repository` | Repository selected for the handoff. |
+| `handoff_ref` | Git ref selected for the handoff. |
 <!-- END action-outputs -->
+
+## 🔗 Workflow handoff
+
+The recommended pattern is to keep this action in a small authorization job
+and let the caller own the next workflow or action:
+
+```yaml
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    steps:
+      - id: gate
+        uses: blackoutsecure/bos-workflow-gatekeeper@v1
+        with:
+          actor: ${{ github.triggering_actor }}
+          organization: ${{ github.repository_owner }}
+          required_teams: release-managers
+          token: ${{ secrets.GATEKEEPER_AUTHZ_PAT }}
+
+  deploy:
+    needs: authorize
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./deploy.sh
+```
+
+For callers that need the gatekeeper to start another workflow, set
+`dispatch_handoff: true`, `handoff_workflow`, `handoff_repository`, and
+`handoff_ref`. The target workflow must be different from the current workflow;
+same-workflow dispatch is rejected to prevent loops. The dispatch requires a
+token with permission to run workflows in the target repository.
+
+Set `caller_workflow` and optionally `caller_repository` to identify the
+expected caller. A mismatch emits a warning notification by default and does
+not fail the job. Set `caller_check_fail: true` for strict enforcement, or
+`suppress_caller_warning: true` to silence the advisory.
+
+An empty `handoff_workflow` with `dispatch_handoff: true` is always an error.
+Authorization is evaluated first; no handoff occurs after a denial.
 
 ## 🔒 Tokens and credentials
 
@@ -181,6 +236,13 @@ does.
 > Actions secrets. Many security teams will not accept that trade. Leave
 > `enterprise_slug` empty and gate on organization role plus team membership
 > unless you specifically need it.
+
+Tokens are optional at the manifest level so non-gated events and caller-only
+checks can run without credentials. They are still required at runtime when an
+enabled policy needs organization, team, repository, or enterprise evidence,
+and when a handoff must be dispatched. A GitHub App installation token with
+organization Members read access is the preferred credential; use a PAT only
+when the required API surface cannot be provided by an App.
 
 ## 🧮 Decision semantics
 

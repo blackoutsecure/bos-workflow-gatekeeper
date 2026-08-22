@@ -14,6 +14,10 @@ def _clean_env(monkeypatch, tmp_path):
             "TOKEN", "REQUIRED_TEAMS", "ALLOW_ORG_ADMIN", "REQUIRE_ALL",
             "REQUIRE_ENTERPRISE_OWNER", "ENTERPRISE_SLUG", "REQUIRED_REPO_PERMISSION",
             "REPOSITORY", "SUMMARY",
+            "CALLER_WORKFLOW", "CALLER_REPOSITORY", "CALLER_CHECK_FAIL",
+            "SUPPRESS_CALLER_WARNING", "HANDOFF_WORKFLOW", "HANDOFF_REPOSITORY",
+            "HANDOFF_REF", "DISPATCH_HANDOFF", "GITHUB_WORKFLOW", "GITHUB_WORKFLOW_REF",
+            "GITHUB_REPOSITORY", "GITHUB_REF", "GITHUB_API_URL",
         }:
             monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "out"))
@@ -88,3 +92,51 @@ def test_bool_falls_back_to_default_on_garbage(monkeypatch):
 def test_csv_trims_and_drops_blanks(monkeypatch):
     monkeypatch.setenv("REQUIRED_TEAMS", " a , ,b,, c ")
     assert gatekeeper._csv("REQUIRED_TEAMS") == ("a", "b", "c")
+
+
+def test_caller_mismatch_warns_without_failing(monkeypatch, capsys):
+    monkeypatch.setenv("EVENT_NAME", "push")
+    monkeypatch.setenv("RESTRICT_TO_EVENTS", "workflow_dispatch")
+    monkeypatch.setenv("CALLER_WORKFLOW", "trusted.yml")
+    monkeypatch.setenv("GITHUB_WORKFLOW", "other.yml")
+    assert gatekeeper.main() == 0
+    assert "Gatekeeper caller" in capsys.readouterr().out
+
+
+def test_caller_mismatch_can_fail(monkeypatch):
+    monkeypatch.setenv("CALLER_WORKFLOW", "trusted.yml")
+    monkeypatch.setenv("GITHUB_WORKFLOW", "other.yml")
+    monkeypatch.setenv("CALLER_CHECK_FAIL", "true")
+    assert gatekeeper.main() == 1
+
+
+def test_dispatch_requires_workflow(monkeypatch):
+    monkeypatch.setenv("DISPATCH_HANDOFF", "true")
+    monkeypatch.setenv("TOKEN", "x")
+    monkeypatch.setenv("ACTOR", "alice")
+    monkeypatch.setenv("ORGANIZATION", "acme")
+    assert gatekeeper.main() == 1
+
+
+def test_dispatch_rejects_current_workflow_loop(monkeypatch):
+    monkeypatch.setenv("DISPATCH_HANDOFF", "true")
+    monkeypatch.setenv("HANDOFF_WORKFLOW", "deploy.yml")
+    monkeypatch.setenv("HANDOFF_REPOSITORY", "acme/app")
+    monkeypatch.setenv("HANDOFF_REF", "main")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "acme/app")
+    monkeypatch.setenv("GITHUB_WORKFLOW_REF", "acme/app/.github/workflows/deploy.yml@refs/heads/main")
+    assert gatekeeper.main() == 1
+
+
+def test_authorized_dispatches_handoff(monkeypatch):
+    monkeypatch.setenv("EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("ACTOR", "alice")
+    monkeypatch.setenv("ORGANIZATION", "acme")
+    monkeypatch.setenv("TOKEN", "x")
+    monkeypatch.setenv("DISPATCH_HANDOFF", "true")
+    monkeypatch.setenv("HANDOFF_WORKFLOW", "deploy.yml")
+    monkeypatch.setenv("HANDOFF_REPOSITORY", "acme/app")
+    monkeypatch.setenv("HANDOFF_REF", "main")
+    monkeypatch.setattr(gatekeeper, "gather", lambda *a, **k: Signals(org_role="admin"))
+    monkeypatch.setattr(gatekeeper.Client, "dispatch_workflow", lambda *a, **k: True)
+    assert gatekeeper.main() == 0

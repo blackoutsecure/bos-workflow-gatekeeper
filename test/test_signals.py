@@ -186,3 +186,16 @@ def test_gather_requests_repo_permission_when_needed():
         need_repo_permission=True,
     )
     assert result.repo_permission == "write"
+
+
+def test_dispatch_workflow_posts_dispatch_request(monkeypatch):
+    client = Client("https://api.github.com", "https://api.github.com/graphql", "t")
+    calls = []
+
+    def request(url, *, data=None, token=None):
+        calls.append((url, data, token))
+        return 204, None
+
+    monkeypatch.setattr(client, "request", request)
+    assert client.dispatch_workflow("acme/app", "deploy.yml", "refs/heads/main") is True
+    assert "/repos/acme/app/actions/workflows/deploy.yml/dispatches" in calls[0][0]

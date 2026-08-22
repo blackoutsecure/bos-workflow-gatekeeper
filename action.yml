@@ -30,7 +30,8 @@ inputs:
       GitHub App installation token with `members: read` (short-lived). A PAT
       with `read:org` also works. The default GITHUB_TOKEN cannot resolve
       organization role, team membership, or enterprise ownership.
-    required: true
+    required: false
+    default: ''
   repository:
     description: '`owner/repo` for the repository-permission check. Required only when `required_repo_permission` is set.'
     required: false
@@ -90,6 +91,42 @@ inputs:
     description: 'Write the decision table to the job summary.'
     required: false
     default: 'true'
+  caller_workflow:
+    description: >-
+      Expected caller workflow file or workflow name. A mismatch emits a
+      warning but does not fail unless caller_check_fail is true.
+    required: false
+    default: ''
+  caller_repository:
+    description: 'Expected caller repository as `owner/repo`; empty skips the repository check.'
+    required: false
+    default: ''
+  caller_check_fail:
+    description: 'Fail when the configured caller identity does not match the running workflow.'
+    required: false
+    default: 'false'
+  suppress_caller_warning:
+    description: 'Suppress the notification emitted when the configured caller identity does not match.'
+    required: false
+    default: 'false'
+  handoff_workflow:
+    description: >-
+      Workflow file or workflow ID to dispatch after authorization. Empty
+      disables handoff. A workflow is required when dispatch_handoff is true.
+    required: false
+    default: ''
+  handoff_repository:
+    description: 'Repository receiving the workflow dispatch; defaults to the current repository.'
+    required: false
+    default: ''
+  handoff_ref:
+    description: 'Git ref for the handoff workflow; defaults to the current ref.'
+    required: false
+    default: ''
+  dispatch_handoff:
+    description: 'Dispatch the configured handoff workflow after authorization succeeds.'
+    required: false
+    default: 'false'
 
 outputs:
   authorized:
@@ -113,6 +150,24 @@ outputs:
   enterprise_owner:
     description: 'true, false, or unknown.'
     value: ${{ steps.gate.outputs.enterprise_owner }}
+  caller_valid:
+    description: '`true` when the configured caller identity matches; `unknown` when no caller check is configured.'
+    value: ${{ steps.gate.outputs.caller_valid }}
+  handoff_requested:
+    description: '`true` when a handoff workflow was configured.'
+    value: ${{ steps.gate.outputs.handoff_requested }}
+  handoff_dispatched:
+    description: '`true` when the handoff workflow was dispatched successfully.'
+    value: ${{ steps.gate.outputs.handoff_dispatched }}
+  handoff_workflow:
+    description: 'Workflow file or ID selected for the handoff.'
+    value: ${{ steps.gate.outputs.handoff_workflow }}
+  handoff_repository:
+    description: 'Repository selected for the handoff.'
+    value: ${{ steps.gate.outputs.handoff_repository }}
+  handoff_ref:
+    description: 'Git ref selected for the handoff.'
+    value: ${{ steps.gate.outputs.handoff_ref }}
 
 runs:
   using: composite
@@ -136,6 +191,19 @@ runs:
         REQUIRE_ALL: ${{ inputs.require_all }}
         FAIL_CLOSED: ${{ inputs.fail_closed }}
         SUMMARY: ${{ inputs.summary }}
+        CALLER_WORKFLOW: ${{ inputs.caller_workflow }}
+        CALLER_REPOSITORY: ${{ inputs.caller_repository }}
+        CALLER_CHECK_FAIL: ${{ inputs.caller_check_fail }}
+        SUPPRESS_CALLER_WARNING: ${{ inputs.suppress_caller_warning }}
+        HANDOFF_WORKFLOW: ${{ inputs.handoff_workflow }}
+        HANDOFF_REPOSITORY: ${{ inputs.handoff_repository || github.repository }}
+        HANDOFF_REF: ${{ inputs.handoff_ref || github.ref }}
+        DISPATCH_HANDOFF: ${{ inputs.dispatch_handoff }}
+        GITHUB_WORKFLOW: ${{ github.workflow }}
+        GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REF: ${{ github.ref }}
+        GITHUB_API_URL: ${{ github.api_url }}
       run: |
         set -euo pipefail
         python3 "${GITHUB_ACTION_PATH}/src/gatekeeper.py"
