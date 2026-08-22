@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from policy import Policy, evaluate
 from runtime import append_github_output, append_step_summary, env_bool, env_csv
@@ -17,6 +18,7 @@ class Handoff:
     repository: str = ""
     ref: str = ""
     dispatch: bool = False
+    inputs: dict[str, str] = field(default_factory=dict)
 
 
 def _bool(name: str, default: bool) -> bool:
@@ -50,33 +52,57 @@ def _caller_valid() -> tuple[str, str]:
     )
 
 
+def _handoff_audit_mode() -> str:
+    mode = os.environ.get("HANDOFF_AUDIT", "warn").strip().lower()
+    if mode not in {"off", "warn", "block"}:
+        print(f"::warning title=Gatekeeper handoff audit::Unknown handoff_audit '{mode}'; defaulting to 'warn'.")
+        return "warn"
+    return mode
+
+
 def _handoff() -> tuple[Handoff, str | None]:
     workflow = os.environ.get("HANDOFF_WORKFLOW", "").strip()
     repository = os.environ.get("HANDOFF_REPOSITORY", "").strip()
     ref = os.environ.get("HANDOFF_REF", "").strip()
     dispatch = _bool("DISPATCH_HANDOFF", False)
+    raw_inputs = os.environ.get("HANDOFF_INPUTS", "").strip()
+    inputs: dict[str, str] = {}
+    if raw_inputs:
+        try:
+            parsed = json.loads(raw_inputs)
+        except json.JSONDecodeError:
+            return Handoff(workflow, repository, ref, dispatch), "handoff_inputs is not valid JSON."
+        if not isinstance(parsed, dict):
+            return Handoff(workflow, repository, ref, dispatch), "handoff_inputs must be a JSON object."
+        # GitHub's own `-f`/API inputs are strings; coerce JSON booleans to
+        # lowercase so a forwarded `true`/`false` matches a workflow_dispatch
+        # boolean input's expected literal instead of Python's "True"/"False".
+        inputs = {
+            str(k): ("true" if v is True else "false" if v is False else str(v))
+            for k, v in parsed.items()
+        }
     if not dispatch:
-        return Handoff(workflow, repository, ref, False), None
+        return Handoff(workflow, repository, ref, False, inputs), None
     if not workflow:
-        return Handoff(workflow, repository, ref, True), (
+        return Handoff(workflow, repository, ref, True, inputs), (
             "dispatch_handoff is enabled but handoff_workflow is empty."
         )
     if not repository or not ref:
-        return Handoff(workflow, repository, ref, True), (
+        return Handoff(workflow, repository, ref, True, inputs), (
             "A handoff requires handoff_repository and handoff_ref."
         )
     if any(char in workflow for char in "\r\n?") or any(char in repository for char in "\r\n?"):
-        return Handoff(workflow, repository, ref, True), "Handoff identifiers contain invalid characters."
+        return Handoff(workflow, repository, ref, True, inputs), "Handoff identifiers contain invalid characters."
     current_workflow_ref = os.environ.get("GITHUB_WORKFLOW_REF", "")
     current_workflow = os.environ.get("GITHUB_WORKFLOW", "")
     if repository == os.environ.get("GITHUB_REPOSITORY", "") and (
         workflow == current_workflow
         or f"/.github/workflows/{workflow}@" in current_workflow_ref
     ):
-        return Handoff(workflow, repository, ref, True), (
+        return Handoff(workflow, repository, ref, True, inputs), (
             "The handoff workflow resolves to the current workflow; refusing a loop."
         )
-    return Handoff(workflow, repository, ref, True), None
+    return Handoff(workflow, repository, ref, True, inputs), None
 
 
 def emit(**pairs: str) -> None:
@@ -87,9 +113,154 @@ def write_summary(lines: list[str]) -> None:
     append_step_summary(os.environ, lines)
 
 
+def _allowlist_check() -> tuple[str, str]:
+    """Optional, domain-agnostic policy check: is `allowlist_value` present in
+    a JSON array read from `allowlist_config_path`/`allowlist_config_key`?
+
+    This deliberately knows nothing about any particular org's config schema
+    — `allowlist_config_key` is a plain dot-path (e.g.
+    `organization.kicker_fanout.enabled_kickers`) into whatever JSON file is
+    at `allowlist_config_path`, so it's reusable for any "is this requested
+    value in the configured allowlist" policy, not just this repo's.
+
+    Returns `(status, reason)`:
+      * `skipped`      — `allowlist_config_path` is empty; not configured.
+      * `unknown`      — configured but `allowlist_value` is empty. Denied
+                          when `allowlist_fail_open` is `false`.
+      * `unrestricted` — file missing, invalid JSON, or the key resolves to
+                          an empty/non-list value. Fails OPEN by default:
+                          this is an additive narrowing control layered on
+                          top of actor authorization, not a standalone
+                          boundary, so a missing or malformed config must
+                          not lock everyone out. Set `allowlist_fail_open:
+                          false` to treat an inconclusive config the same as
+                          a hard `denied` instead — appropriate when the
+                          config file itself is access-controlled (branch
+                          protection / CODEOWNERS) and a missing/corrupted
+                          file is more likely tampering than a rollout gap.
+      * `allowed` / `denied` — the key resolved to a non-empty list and
+                          `allowlist_value` was, or was not, found in it.
+    """
+    path = os.environ.get("ALLOWLIST_CONFIG_PATH", "").strip()
+    if not path:
+        return "skipped", ""
+    status, reason = _allowlist_lookup(path)
+    if status in {"unrestricted", "unknown"} and not _bool("ALLOWLIST_FAIL_OPEN", True):
+        return "denied", f"{reason} (allowlist_fail_open is false: an inconclusive result denies.)"
+    return status, reason
+
+
+def _allowlist_lookup(path: str) -> tuple[str, str]:
+    key_path = os.environ.get("ALLOWLIST_CONFIG_KEY", "").strip()
+    value = os.environ.get("ALLOWLIST_VALUE", "").strip()
+    if not value:
+        return "unknown", "allowlist_value is empty; nothing to check."
+
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return "unrestricted", f"'{path}' is missing or not valid JSON; no additional restriction."
+
+    node = data
+    for segment in (s for s in key_path.split(".") if s):
+        if not isinstance(node, dict) or segment not in node:
+            return "unrestricted", f"'{key_path}' not found in '{path}'; no additional restriction."
+        node = node[segment]
+
+    if not isinstance(node, list) or not node:
+        return "unrestricted", f"'{key_path}' in '{path}' is empty or not a list; no additional restriction."
+
+    allowed_values = {str(item) for item in node}
+    if value in allowed_values:
+        return "allowed", f"'{value}' is in '{key_path}'."
+    return "denied", (
+        f"'{value}' is not in '{key_path}' ({', '.join(sorted(allowed_values))}) read from '{path}'."
+    )
+
+
+def _run_allowlist_only() -> int:
+    """Check `allowlist_value` against the config allowlist with no actor,
+    organization, or handoff involved. For callers that only want this one
+    policy primitive (e.g. "is the requested operation still enabled?").
+    """
+    fail_closed = _bool("FAIL_CLOSED", True)
+    status, reason = _allowlist_check()
+    authorized = status != "denied"
+    return _finish(
+        authorized, reason or "allowlist_only is set but allowlist_config_path is empty; nothing to check.",
+        {}, None, Policy(), fail_closed, "", Handoff(), "unknown",
+        allowlist_status=status, allowlist_reason=reason,
+    )
+
+
+def _run_handoff_only() -> int:
+    """Dispatch (and audit) the handoff workflow with no actor/org authorization.
+
+    For system-triggered dynamic chaining (schedule/push callers with no
+    human actor to authorize) that still wants the handoff-target audit.
+    """
+    fail_closed = _bool("FAIL_CLOSED", True)
+    allowlist_status, allowlist_reason = _allowlist_check()
+    if allowlist_status == "denied":
+        return _finish(
+            False, allowlist_reason, {}, None, Policy(), fail_closed, "", Handoff(), "unknown",
+            allowlist_status=allowlist_status, allowlist_reason=allowlist_reason,
+        )
+    handoff, handoff_error = _handoff()
+    if handoff_error:
+        return _finish(
+            False, handoff_error, {}, None, Policy(), fail_closed, "", handoff, "unknown",
+            allowlist_status=allowlist_status, allowlist_reason=allowlist_reason,
+        )
+    if not handoff.dispatch:
+        return _finish(
+            True, "handoff_only is set but dispatch_handoff is not enabled; nothing to do.",
+            {}, None, Policy(), fail_closed, "", handoff, "unknown",
+            allowlist_status=allowlist_status, allowlist_reason=allowlist_reason,
+        )
+
+    client = Client(
+        api_url=os.environ.get("GITHUB_API_URL", "https://api.github.com"),
+        graphql_url=os.environ.get("GITHUB_GRAPHQL_URL", "https://api.github.com/graphql"),
+        token=os.environ.get("TOKEN", ""),
+    )
+    audit_mode = _handoff_audit_mode()
+    audit_status, audit_reason = (
+        ("skipped", "handoff_audit is off.")
+        if audit_mode == "off"
+        else client.audit_workflow_dispatch_target(handoff.repository, handoff.ref, handoff.workflow)
+    )
+    if audit_status == "insecure":
+        if audit_mode == "block":
+            return _finish(
+                False, f"Handoff blocked by audit: {audit_reason}", {}, None, Policy(), fail_closed, "", handoff, "unknown",
+                handoff_audit_status=audit_status, handoff_audit_reason=audit_reason,
+                allowlist_status=allowlist_status, allowlist_reason=allowlist_reason,
+            )
+        print(f"::warning title=Gatekeeper handoff audit::{audit_reason}")
+
+    if client.dispatch_workflow(handoff.repository, handoff.workflow, handoff.ref, handoff.inputs):
+        return _finish(
+            True, "Handoff workflow dispatched.", {}, None, Policy(), fail_closed, "", handoff, "unknown",
+            handoff_dispatched=True, handoff_audit_status=audit_status, handoff_audit_reason=audit_reason,
+            allowlist_status=allowlist_status, allowlist_reason=allowlist_reason,
+        )
+    return _finish(
+        False, "handoff_only dispatch failed: the handoff workflow could not be dispatched.",
+        {}, None, Policy(), fail_closed, "", handoff, "unknown",
+        handoff_audit_status=audit_status, handoff_audit_reason=audit_reason,
+        allowlist_status=allowlist_status, allowlist_reason=allowlist_reason,
+    )
+
+
 def main() -> int:
     if _bool("PREFLIGHT_ONLY", False):
         return 0
+    if _bool("ALLOWLIST_ONLY", False):
+        return _run_allowlist_only()
+    if _bool("HANDOFF_ONLY", False):
+        return _run_handoff_only()
     event_name = os.environ.get("EVENT_NAME", "")
     restrict = _csv("RESTRICT_TO_EVENTS")
     fail_closed = _bool("FAIL_CLOSED", True)
@@ -107,7 +278,7 @@ def main() -> int:
         return _finish(False, handoff_error, {}, None, Policy(), fail_closed, actor, handoff, caller_state)
 
     if restrict and "*" not in restrict and event_name not in restrict:
-        emit(authorized="true", reason=f"Event '{event_name}' is not gated.", enforced="false", caller_valid=caller_state, handoff_requested="true" if handoff.workflow else "false", handoff_dispatched="false", handoff_workflow=handoff.workflow, handoff_repository=handoff.repository, handoff_ref=handoff.ref)
+        emit(authorized="true", reason=f"Event '{event_name}' is not gated.", enforced="false", caller_valid=caller_state, handoff_requested="true" if handoff.workflow else "false", handoff_dispatched="false", handoff_workflow=handoff.workflow, handoff_repository=handoff.repository, handoff_ref=handoff.ref, handoff_audit_status="skipped", handoff_audit_reason="", allowlist_status="skipped", allowlist_reason="")
         print(f"::notice title=Gatekeeper::Event '{event_name}' is not gated; passing through.")
         return 0
 
@@ -145,11 +316,40 @@ def main() -> int:
         need_repo_permission=bool(policy.required_repo_permission),
     )
     decision = evaluate(resolved, policy)
+    allowlist_status, allowlist_reason = _allowlist_check()
+    if allowlist_status == "denied":
+        return _finish(
+            False, allowlist_reason, decision.checks, resolved, policy, fail_closed, actor, handoff, caller_state,
+            allowlist_status=allowlist_status, allowlist_reason=allowlist_reason,
+        )
+    audit_status, audit_reason = "skipped", ""
     if decision.authorized and handoff.dispatch:
-        if client.dispatch_workflow(handoff.repository, handoff.workflow, handoff.ref):
+        audit_mode = _handoff_audit_mode()
+        if audit_mode != "off":
+            audit_status, audit_reason = client.audit_workflow_dispatch_target(
+                handoff.repository, handoff.ref, handoff.workflow
+            )
+            if audit_status == "insecure":
+                title = "Gatekeeper handoff audit"
+                if audit_mode == "block":
+                    return _finish(
+                        False,
+                        f"Handoff blocked by audit: {audit_reason}",
+                        decision.checks, resolved, policy, fail_closed, actor, handoff, caller_state,
+                        handoff_audit_status=audit_status, handoff_audit_reason=audit_reason,
+                        allowlist_status=allowlist_status, allowlist_reason=allowlist_reason,
+                    )
+                print(f"::warning title={title}::{audit_reason}")
+        if client.dispatch_workflow(handoff.repository, handoff.workflow, handoff.ref, handoff.inputs):
             handoff_dispatched = True
         else:
-            return _finish(False, "Authorization passed, but the handoff workflow could not be dispatched.", decision.checks, resolved, policy, fail_closed, actor, handoff, caller_state)
+            return _finish(
+                False,
+                "Authorization passed, but the handoff workflow could not be dispatched.",
+                decision.checks, resolved, policy, fail_closed, actor, handoff, caller_state,
+                handoff_audit_status=audit_status, handoff_audit_reason=audit_reason,
+                allowlist_status=allowlist_status, allowlist_reason=allowlist_reason,
+            )
     else:
         handoff_dispatched = False
     return _finish(
@@ -163,10 +363,18 @@ def main() -> int:
         handoff,
         caller_state,
         handoff_dispatched,
+        handoff_audit_status=audit_status,
+        handoff_audit_reason=audit_reason,
+        allowlist_status=allowlist_status,
+        allowlist_reason=allowlist_reason,
     )
 
 
-def _finish(authorized, reason, checks, resolved, policy, fail_closed, actor, handoff, caller_state, handoff_dispatched=False) -> int:
+def _finish(
+    authorized, reason, checks, resolved, policy, fail_closed, actor, handoff, caller_state,
+    handoff_dispatched=False, handoff_audit_status="skipped", handoff_audit_reason="",
+    allowlist_status="skipped", allowlist_reason="",
+) -> int:
     emit(
         authorized="true" if authorized else "false",
         reason=reason,
@@ -181,6 +389,10 @@ def _finish(authorized, reason, checks, resolved, policy, fail_closed, actor, ha
         handoff_workflow=handoff.workflow,
         handoff_repository=handoff.repository,
         handoff_ref=handoff.ref,
+        handoff_audit_status=handoff_audit_status,
+        handoff_audit_reason=handoff_audit_reason,
+        allowlist_status=allowlist_status,
+        allowlist_reason=allowlist_reason,
     )
 
     if os.environ.get("SUMMARY", "true").lower() != "false":

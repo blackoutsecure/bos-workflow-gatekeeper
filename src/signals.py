@@ -7,7 +7,9 @@ a definitive answer, so `policy.evaluate` can distinguish "denied" from
 
 from __future__ import annotations
 
+import base64
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -15,6 +17,15 @@ import urllib.request
 from policy import UNKNOWN, Signals
 
 USER_AGENT = "bos-workflow-gatekeeper"
+_WORKFLOW_DISPATCH_RE = re.compile(r"(?m)^\s*workflow_dispatch\s*:")
+# A real step, not a comment or a prose mention: this repo's source is public,
+# so "does the string 'bos-workflow-gatekeeper' appear anywhere" is trivially
+# spoofed by anyone who can read this file — a `# uses: .../bos-workflow-
+# gatekeeper@x` comment, or a docs link, would satisfy that check without any
+# authorization actually running. Requiring an actual `uses:` line pinned to
+# a ref raises the bar to "an authorization step really executes," which is
+# what the audit is meant to attest to.
+_GUARD_STEP_RE = re.compile(r"(?im)^[ \t]*(?:-[ \t]*)?uses:[ \t]*\S*bos-workflow-gatekeeper@\S+")
 
 
 class Client:
@@ -113,15 +124,58 @@ class Client:
         logins = {str(n.get("login", "")).lower() for n in nodes if isinstance(n, dict)}
         return "true" if actor.lower() in logins else "false"
 
-    def dispatch_workflow(self, repository: str, workflow: str, ref: str) -> bool:
+    def dispatch_workflow(self, repository: str, workflow: str, ref: str, inputs: dict[str, str] | None = None) -> bool:
         """Dispatch a workflow and return whether GitHub accepted the request."""
         endpoint = (
             f"{self.api_url}/repos/{urllib.parse.quote(repository, safe='/')}/actions/"
             f"workflows/{urllib.parse.quote(workflow, safe='')}/dispatches"
         )
-        payload = json.dumps({"ref": ref}).encode("utf-8")
-        status, _ = self.request(endpoint, data=payload)
+        body: dict[str, object] = {"ref": ref}
+        if inputs:
+            body["inputs"] = inputs
+        status, _ = self.request(endpoint, data=json.dumps(body).encode("utf-8"))
         return status == 204
+
+    def audit_workflow_dispatch_target(self, repository: str, ref: str, workflow: str) -> tuple[str, str]:
+        """Best-effort check: can the handoff target be triggered directly, unguarded?
+
+        Returns `(status, reason)` where `status` is one of `secure`,
+        `insecure`, or `unknown`. `insecure` means the target file declares its
+        own `workflow_dispatch:` trigger with no detected `uses:` step pinned
+        to `bos-workflow-gatekeeper@<ref>` of its own, so anyone with dispatch
+        access to that repository could trigger it directly, bypassing the
+        gate that led to this handoff. This is a static text scan of the
+        target's YAML, not a full parse or a proof the step actually runs
+        unconditionally — it favors cheap and conservative over exhaustive.
+        """
+        path = workflow if "/" in workflow else f".github/workflows/{workflow}"
+        if workflow.isdigit():
+            status, payload = self.request(f"{self.api_url}/repos/{repository}/actions/workflows/{workflow}")
+            if status != 200 or not isinstance(payload, dict) or not payload.get("path"):
+                return "unknown", f"Could not resolve numeric workflow ID '{workflow}' to a file path."
+            path = str(payload["path"])
+
+        status, payload = self.request(
+            f"{self.api_url}/repos/{urllib.parse.quote(repository, safe='/')}/contents/"
+            f"{urllib.parse.quote(path, safe='/')}?ref={urllib.parse.quote(ref, safe='')}"
+        )
+        if status != 200 or not isinstance(payload, dict) or not payload.get("content"):
+            return "unknown", f"Could not fetch `{path}` from `{repository}@{ref}` to audit."
+
+        try:
+            content = base64.b64decode(payload["content"]).decode("utf-8", errors="replace")
+        except (ValueError, TypeError):
+            return "unknown", f"Could not decode `{path}` contents for audit."
+
+        has_dispatch = bool(_WORKFLOW_DISPATCH_RE.search(content))
+        guarded = bool(_GUARD_STEP_RE.search(content))
+        if has_dispatch and not guarded:
+            return "insecure", (
+                f"`{path}` declares its own `workflow_dispatch:` trigger with no `uses:` step "
+                "pinned to bos-workflow-gatekeeper, so it can be triggered directly, bypassing "
+                "this gate."
+            )
+        return "secure", f"`{path}` has no unguarded `workflow_dispatch:` exposure."
 
 
 def gather(

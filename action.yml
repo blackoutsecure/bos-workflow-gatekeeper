@@ -125,10 +125,28 @@ inputs:
     description: 'Git ref for the handoff workflow; defaults to the current ref.'
     required: false
     default: ''
+  handoff_inputs:
+    description: >-
+      JSON object of `workflow_dispatch` inputs to forward to the handoff
+      workflow, e.g. `{"mode":"check"}`. Values are coerced to strings, same
+      as GitHub's own dispatch inputs. Empty dispatches with no inputs.
+    required: false
+    default: ''
   dispatch_handoff:
     description: 'Dispatch the configured handoff workflow after authorization succeeds.'
     required: false
     default: 'false'
+  handoff_audit:
+    description: >-
+      Before dispatching `handoff_workflow`, check whether it declares its own
+      `workflow_dispatch:` trigger with no detectable `bos-workflow-gatekeeper`
+      authorization step of its own — meaning anyone with dispatch access
+      could invoke it directly, bypassing this gate. `warn` (default) logs a
+      `::warning::` and still dispatches; `block` refuses to dispatch and
+      fails the run when the target looks insecure; `off` skips the check
+      (and its GitHub API call) entirely.
+    required: false
+    default: 'warn'
   preflight_spec:
     description: >-
       JSON dependency specification for runner preflight. Supports
@@ -144,6 +162,53 @@ inputs:
     description: 'Run only runner preflight and skip actor authorization. Intended for workflow orchestration.'
     required: false
     default: 'false'
+  handoff_only:
+    description: >-
+      Dispatch (and audit) `handoff_workflow` and skip actor/organization
+      authorization entirely. For system-triggered dynamic chaining —
+      schedule or push callers with no human actor to authorize — that still
+      wants the `handoff_audit` security check. Requires `dispatch_handoff:
+      true` and a `token` with permission to dispatch workflows in
+      `handoff_repository`.
+    required: false
+    default: 'false'
+  allowlist_config_path:
+    description: >-
+      Path to a local JSON file. When set, `allowlist_value` must appear in
+      the array at `allowlist_config_key`, or the run is denied. Domain-
+      agnostic: this repository's config schema is not baked in — point it
+      at any JSON file. Empty (default) skips the check entirely.
+    required: false
+    default: ''
+  allowlist_config_key:
+    description: >-
+      Dot-path to the array inside `allowlist_config_path`, e.g.
+      `organization.kicker_fanout.enabled_kickers`. A missing path, invalid
+      JSON, or an empty/non-array value fails OPEN (treated as "no
+      restriction") — this is an additive narrowing control layered on top
+      of actor authorization, not a standalone boundary.
+    required: false
+    default: ''
+  allowlist_value:
+    description: 'The value to check for membership in the configured allowlist, e.g. `${{ inputs.kicker }}`.'
+    required: false
+    default: ''
+  allowlist_only:
+    description: >-
+      Check `allowlist_value` against the config allowlist and skip actor,
+      organization, and handoff entirely. For callers that only want this
+      one policy primitive with nothing else attached.
+    required: false
+    default: 'false'
+  allowlist_fail_open:
+    description: >-
+      When the allowlist config is missing, invalid, or resolves to an
+      empty/non-array value, `true` (default) treats it as unrestricted and
+      allows the run; `false` denies it instead. Set `false` when the config
+      file itself is access-controlled (branch protection / CODEOWNERS) and
+      a missing/corrupted file is more likely tampering than a rollout gap.
+    required: false
+    default: 'true'
 
 outputs:
   authorized:
@@ -185,6 +250,18 @@ outputs:
   handoff_ref:
     description: 'Git ref selected for the handoff.'
     value: ${{ steps.gate.outputs.handoff_ref }}
+  handoff_audit_status:
+    description: '`secure`, `insecure`, `unknown`, or `skipped` (handoff_audit was off, or no handoff was requested).'
+    value: ${{ steps.gate.outputs.handoff_audit_status }}
+  handoff_audit_reason:
+    description: 'Human-readable explanation of the handoff audit result.'
+    value: ${{ steps.gate.outputs.handoff_audit_reason }}
+  allowlist_status:
+    description: '`allowed`, `denied`, `unrestricted`, `unknown`, or `skipped` (allowlist_config_path was empty).'
+    value: ${{ steps.gate.outputs.allowlist_status }}
+  allowlist_reason:
+    description: 'Human-readable explanation of the allowlist check result.'
+    value: ${{ steps.gate.outputs.allowlist_reason }}
   preflight_satisfied:
     description: '`true` when every declared runner requirement was met.'
     value: ${{ steps.preflight.outputs.preflight_satisfied }}
@@ -233,7 +310,15 @@ runs:
         HANDOFF_WORKFLOW: ${{ inputs.handoff_workflow }}
         HANDOFF_REPOSITORY: ${{ inputs.handoff_repository || github.repository }}
         HANDOFF_REF: ${{ inputs.handoff_ref || github.ref }}
+        HANDOFF_INPUTS: ${{ inputs.handoff_inputs }}
         DISPATCH_HANDOFF: ${{ inputs.dispatch_handoff }}
+        HANDOFF_AUDIT: ${{ inputs.handoff_audit }}
+        HANDOFF_ONLY: ${{ inputs.handoff_only }}
+        ALLOWLIST_CONFIG_PATH: ${{ inputs.allowlist_config_path }}
+        ALLOWLIST_CONFIG_KEY: ${{ inputs.allowlist_config_key }}
+        ALLOWLIST_VALUE: ${{ inputs.allowlist_value }}
+        ALLOWLIST_ONLY: ${{ inputs.allowlist_only }}
+        ALLOWLIST_FAIL_OPEN: ${{ inputs.allowlist_fail_open }}
         GITHUB_WORKFLOW: ${{ github.workflow }}
         GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
         GITHUB_REPOSITORY: ${{ github.repository }}

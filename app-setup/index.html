@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Create the bos-workflow-gatekeeper GitHub App</title>
+<meta name="robots" content="noindex" />
+<style>
+  :root { --ink:#18212b; --muted:#5c6b78; --line:#d9e1e7; --brand:#e7931d; --bg:#f4f6f8; --ok:#18864b; --warn:#a15c00; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  .page { max-width: 760px; margin: auto; padding: 32px 20px 64px; }
+  header { border-top: 6px solid var(--brand); padding: 8px 0 20px; }
+  h1 { font-size: 26px; margin: 8px 0; }
+  h2 { border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-top: 36px; }
+  p.lead { color: var(--muted); }
+  label { display: block; font-weight: 600; margin: 16px 0 4px; }
+  input[type=text] { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 15px; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  button { background: var(--ink); color: #fff; border: 0; border-radius: 6px; padding: 12px 20px; font-size: 15px; cursor: pointer; margin-top: 20px; }
+  button:hover { opacity: .9; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 20px; margin-top: 20px; }
+  .warn { border-left: 4px solid var(--warn); background: #fff8ed; padding: 12px 16px; }
+  .ok { border-left: 4px solid var(--ok); background: #f0faf4; padding: 12px 16px; }
+  code, pre { background: #eef2f5; border-radius: 4px; }
+  code { padding: 2px 5px; }
+  pre { padding: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+  th { background: #eef2f5; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > * { flex: 1 1 240px; }
+  footer { color: var(--muted); font-size: 13px; margin-top: 48px; border-top: 1px solid var(--line); padding-top: 16px; }
+  a { color: #0b5fb0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div style="color:#a15c00;font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px;">bos-workflow-gatekeeper</div>
+    <h1>Create the recommended GitHub App</h1>
+    <p class="lead">
+      Registers a GitHub App with exactly the permission
+      <code>bos-workflow-gatekeeper</code> needs (organization
+      <strong>Members: Read-only</strong>) using GitHub's
+      <a href="https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest">app manifest flow</a>.
+      This page is 100% static — everything below runs in your browser only.
+      Nothing is sent to any server this project controls, because there
+      isn't one.
+    </p>
+  </header>
+
+  <section id="step-create">
+    <h2>1. Create the App</h2>
+    <p>Fill in where the App should be created, then continue to GitHub. You'll
+      review the App's settings on GitHub's own page before anything is
+      created — this only prepares the request.</p>
+
+    <form id="manifest-form">
+      <div class="row">
+        <div>
+          <label for="owner">Organization or user login</label>
+          <input type="text" id="owner" placeholder="blackoutsecure" required />
+          <div class="hint">Where the App will be registered.</div>
+        </div>
+        <div>
+          <label for="owner-type">Account type</label>
+          <select id="owner-type">
+            <option value="org" selected>Organization</option>
+            <option value="user">Personal account</option>
+          </select>
+          <div class="hint">GitHub uses a different creation URL for each.</div>
+        </div>
+      </div>
+      <label for="app-name">App name</label>
+      <input type="text" id="app-name" value="workflow-gatekeeper-authorizer" required />
+      <div class="hint">Must be unique across all of GitHub. Add a suffix if it's taken.</div>
+      <label for="homepage">Homepage URL</label>
+      <input type="text" id="homepage" value="https://github.com/blackoutsecure/bos-workflow-gatekeeper" required />
+      <button type="submit">Continue to GitHub &rarr;</button>
+    </form>
+  </section>
+
+  <section id="step-result" style="display:none">
+    <h2>2. Save your credentials</h2>
+    <div class="card warn">
+      <strong>These are shown once.</strong> GitHub does not let you retrieve
+      the private key or client secret again after you leave this page —
+      save them now.
+    </div>
+    <div id="result-content"></div>
+  </section>
+
+  <section id="step-error" style="display:none">
+    <h2>Something went wrong</h2>
+    <div class="card warn" id="error-content"></div>
+  </section>
+
+  <section>
+    <h2>3. Install the App and configure the workflow</h2>
+    <p>Creating the App does not install it. Visit the App's public settings
+      page (linked in your result above, or under your organization's
+      <strong>Settings → GitHub Apps</strong>) and click <strong>Install</strong>
+      to grant it access to the repositories that will use it.</p>
+    <p>Then, in each consumer repository:</p>
+    <table>
+      <thead><tr><th>Set as</th><th>Name</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Repository/organization <strong>variable</strong></td><td><code>GATEKEEPER_APP_ID</code></td><td>The App ID from step 2</td></tr>
+        <tr><td>Repository/organization <strong>secret</strong></td><td><code>GATEKEEPER_APP_PRIVATE_KEY</code></td><td>The full contents of the downloaded <code>.pem</code> file</td></tr>
+      </tbody>
+    </table>
+    <p>Those two names match the
+      <a href="https://github.com/blackoutsecure/bos-workflow-gatekeeper#-quick-start">bos-workflow-gatekeeper README</a>
+      examples exactly — no renaming needed if you use the README's snippets
+      as-is.</p>
+  </section>
+
+  <footer>
+    <p>
+      Source: <a href="https://github.com/blackoutsecure/bos-workflow-gatekeeper/tree/main/app-setup">app-setup/</a>
+      in the bos-workflow-gatekeeper repository. This page never transmits
+      your App's private key anywhere except directly from your browser to
+      GitHub's own API — read <code>app-setup/README.md</code> or the page
+      source to verify.
+    </p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var params = new URLSearchParams(window.location.search);
+  var code = params.get("code");
+
+  function show(id) {
+    document.getElementById(id).style.display = "";
+  }
+
+  function escapeHtml(value) {
+    var div = document.createElement("div");
+    div.textContent = value == null ? "" : String(value);
+    return div.innerHTML;
+  }
+
+  function downloadFile(filename, contents) {
+    var blob = new Blob([contents], { type: "text/plain" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function renderResult(app) {
+    document.getElementById("step-create").style.display = "none";
+    show("step-result");
+    var el = document.getElementById("result-content");
+    el.innerHTML =
+      "<table>" +
+      "<tr><th>App ID (<code>GATEKEEPER_APP_ID</code>)</th><td><code>" + escapeHtml(app.id) + "</code></td></tr>" +
+      "<tr><th>Slug</th><td><a href=\"https://github.com/apps/" + escapeHtml(app.slug) + "\" target=\"_blank\" rel=\"noopener\">" + escapeHtml(app.slug) + "</a></td></tr>" +
+      "<tr><th>Owner</th><td>" + escapeHtml(app.owner && app.owner.login) + "</td></tr>" +
+      "</table>" +
+      "<label>Private key (<code>GATEKEEPER_APP_PRIVATE_KEY</code>)</label>" +
+      "<pre>" + escapeHtml(app.pem) + "</pre>" +
+      "<button type=\"button\" id=\"download-pem\">Download private-key.pem</button>" +
+      "<div class=\"card ok\" style=\"margin-top:16px;\">Next: install the App (link above), then continue to step 3 below.</div>";
+    document.getElementById("download-pem").addEventListener("click", function () {
+      downloadFile((app.slug || "gatekeeper-app") + "-private-key.pem", app.pem);
+    });
+  }
+
+  function renderError(message) {
+    show("step-error");
+    document.getElementById("error-content").textContent = message;
+  }
+
+  if (code) {
+    // GitHub's manifest-conversion endpoint requires no authentication -
+    // the one-time `code` in the URL is the only credential, and it is
+    // single-use and expires quickly. This call happens directly from the
+    // browser to api.github.com; nothing passes through any other server.
+    fetch("https://api.github.com/app-manifests/" + encodeURIComponent(code) + "/conversions", {
+      method: "POST",
+      headers: { Accept: "application/vnd.github+json" }
+    })
+      .then(function (resp) {
+        if (!resp.ok) {
+          throw new Error("GitHub returned " + resp.status + ". The code may have already been used or expired - restart from step 1.");
+        }
+        return resp.json();
+      })
+      .then(renderResult)
+      .catch(function (err) {
+        renderError(err.message || String(err));
+      });
+  } else {
+    document.getElementById("manifest-form").addEventListener("submit", function (event) {
+      event.preventDefault();
+      var owner = document.getElementById("owner").value.trim();
+      var ownerType = document.getElementById("owner-type").value;
+      var name = document.getElementById("app-name").value.trim();
+      var homepage = document.getElementById("homepage").value.trim();
+      if (!owner || !name || !homepage) {
+        return;
+      }
+
+      // Redirect back to this exact page (minus any existing query string)
+      // so the code-exchange branch above runs next.
+      var redirectUrl = window.location.origin + window.location.pathname;
+
+      var manifest = {
+        name: name,
+        url: homepage,
+        redirect_url: redirectUrl,
+        public: false,
+        default_permissions: { members: "read" },
+        default_events: []
+      };
+
+      var target = ownerType === "org"
+        ? "https://github.com/organizations/" + encodeURIComponent(owner) + "/settings/apps/new"
+        : "https://github.com/settings/apps/new";
+
+      var form = document.createElement("form");
+      form.method = "POST";
+      form.action = target;
+      form.style.display = "none";
+
+      var input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "manifest";
+      input.value = JSON.stringify(manifest);
+      form.appendChild(input);
+      document.body.appendChild(form);
+      form.submit();
+    });
+  }
+})();
+</script>
+</body>
+</html>

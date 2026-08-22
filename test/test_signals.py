@@ -1,5 +1,8 @@
 """API-response handling. No network: `Client.request` is stubbed per test."""
 
+import base64
+import json
+
 import pytest
 
 from policy import UNKNOWN
@@ -199,3 +202,111 @@ def test_dispatch_workflow_posts_dispatch_request(monkeypatch):
     monkeypatch.setattr(client, "request", request)
     assert client.dispatch_workflow("acme/app", "deploy.yml", "refs/heads/main") is True
     assert "/repos/acme/app/actions/workflows/deploy.yml/dispatches" in calls[0][0]
+
+
+def test_dispatch_workflow_forwards_inputs(monkeypatch):
+    client = Client("https://api.github.com", "https://api.github.com/graphql", "t")
+    calls = []
+
+    def request(url, *, data=None, token=None):
+        calls.append(json.loads(data))
+        return 204, None
+
+    monkeypatch.setattr(client, "request", request)
+    ok = client.dispatch_workflow("acme/app", "deploy.yml", "main", {"kicker": "sync"})
+    assert ok is True
+    assert calls[0] == {"ref": "main", "inputs": {"kicker": "sync"}}
+
+
+def test_dispatch_workflow_omits_inputs_key_when_empty(monkeypatch):
+    client = Client("https://api.github.com", "https://api.github.com/graphql", "t")
+    calls = []
+
+    def request(url, *, data=None, token=None):
+        calls.append(json.loads(data))
+        return 204, None
+
+    monkeypatch.setattr(client, "request", request)
+    client.dispatch_workflow("acme/app", "deploy.yml", "main")
+    assert calls[0] == {"ref": "main"}
+
+
+# --------------------------------------------------------------------------
+# audit_workflow_dispatch_target
+# --------------------------------------------------------------------------
+def _b64(text: str) -> str:
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+
+def test_audit_flags_unguarded_workflow_dispatch():
+    content = _b64("on:\n  workflow_dispatch: {}\njobs: {}\n")
+    client = FakeClient({"/contents/": (200, {"content": content})})
+    status, reason = client.audit_workflow_dispatch_target("acme/app", "main", "deploy.yml")
+    assert status == "insecure"
+    assert "deploy.yml" in reason
+
+
+def test_audit_treats_gatekeeper_reference_as_guarded():
+    content = _b64(
+        "on:\n  workflow_dispatch: {}\njobs:\n  x:\n    steps:\n"
+        "      - uses: blackoutsecure/bos-workflow-gatekeeper@v1\n"
+    )
+    client = FakeClient({"/contents/": (200, {"content": content})})
+    status, _ = client.audit_workflow_dispatch_target("acme/app", "main", "deploy.yml")
+    assert status == "secure"
+
+
+def test_audit_rejects_commented_out_guard_reference():
+    # The source of this check is public; a bare substring match would be
+    # trivially spoofed by a comment mentioning the action without ever
+    # calling it. A commented-out `uses:` line must not count as guarded.
+    content = _b64(
+        "on:\n  workflow_dispatch: {}\njobs:\n  x:\n    steps:\n"
+        "      # uses: blackoutsecure/bos-workflow-gatekeeper@v1\n"
+        "      - run: echo hi\n"
+    )
+    client = FakeClient({"/contents/": (200, {"content": content})})
+    status, _ = client.audit_workflow_dispatch_target("acme/app", "main", "deploy.yml")
+    assert status == "insecure"
+
+
+def test_audit_rejects_prose_mention_without_a_uses_step():
+    content = _b64(
+        "# See https://github.com/blackoutsecure/bos-workflow-gatekeeper for details.\n"
+        "on:\n  workflow_dispatch: {}\njobs: {}\n"
+    )
+    client = FakeClient({"/contents/": (200, {"content": content})})
+    status, _ = client.audit_workflow_dispatch_target("acme/app", "main", "deploy.yml")
+    assert status == "insecure"
+
+
+def test_audit_workflow_call_only_is_secure():
+    content = _b64("on:\n  workflow_call: {}\njobs: {}\n")
+    client = FakeClient({"/contents/": (200, {"content": content})})
+    status, _ = client.audit_workflow_dispatch_target("acme/app", "main", "deploy.yml")
+    assert status == "secure"
+
+
+def test_audit_unfetchable_file_is_unknown():
+    client = FakeClient({"/contents/": (404, None)})
+    status, _ = client.audit_workflow_dispatch_target("acme/app", "main", "deploy.yml")
+    assert status == "unknown"
+
+
+def test_audit_resolves_numeric_workflow_id_to_path():
+    content = _b64("on:\n  workflow_dispatch: {}\njobs: {}\n")
+    client = FakeClient(
+        {
+            "/actions/workflows/123": (200, {"path": ".github/workflows/deploy.yml"}),
+            "/contents/": (200, {"content": content}),
+        }
+    )
+    status, reason = client.audit_workflow_dispatch_target("acme/app", "main", "123")
+    assert status == "insecure"
+    assert "deploy.yml" in reason
+
+
+def test_audit_unresolvable_numeric_id_is_unknown():
+    client = FakeClient({"/actions/workflows/123": (404, None)})
+    status, _ = client.audit_workflow_dispatch_target("acme/app", "main", "123")
+    assert status == "unknown"
