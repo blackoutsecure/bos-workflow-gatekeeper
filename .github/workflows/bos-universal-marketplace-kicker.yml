@@ -69,7 +69,7 @@ jobs:
     name: Sync managed kicker and config
     permissions:
       contents: write
-    uses: blackoutsecure/bos-automation-hub/.github/workflows/bos-universal-sync.yml@dev
+    uses: blackoutsecure/bos-automation-hub/.github/workflows/bos-universal-sync.yml@main
     with:
       mode: commit
     secrets: inherit
