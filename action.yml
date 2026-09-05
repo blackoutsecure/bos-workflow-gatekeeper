@@ -4,15 +4,14 @@
 # Licensed under Apache License 2.0
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-name: 'Blackout Secure Workflow Gatekeeper'
+name: "Blackout Secure Workflow Gatekeeper"
 # MP010: keep <= 125 chars; full feature list lives in README.md.
 description: >-
   Fail-closed authorization for GitHub Actions. Deny unauthorized runs by org role, team, repo permission, or enterprise.
-author: 'Blackout Secure'
-
+author: "Blackout Secure"
 branding:
-  color: 'orange'
-  icon: 'shield'
+  color: "orange"
+  icon: "shield"
 
 inputs:
   actor:
@@ -21,11 +20,11 @@ inputs:
       on a re-run `actor` stays the original dispatcher while
       `triggering_actor` is whoever pressed re-run.
     required: false
-    default: ''
+    default: ""
   organization:
-    description: 'Organization login that owns the repository.'
+    description: "Organization login that owns the repository."
     required: false
-    default: ''
+    default: ""
   token:
     description: >-
       Credential for organization, team, and repository lookups. Prefer a
@@ -33,109 +32,109 @@ inputs:
       with `read:org` also works. The default GITHUB_TOKEN cannot resolve
       organization role, team membership, or enterprise ownership.
     required: false
-    default: ''
+    default: ""
   repository:
-    description: '`owner/repo` for the repository-permission check. Required only when `required_repo_permission` is set.'
+    description: "`owner/repo` for the repository-permission check. Required only when `required_repo_permission` is set."
     required: false
-    default: ''
+    default: ""
   event_name:
-    description: 'Event that triggered the run. Compared against `restrict_to_events`.'
+    description: "Event that triggered the run. Compared against `restrict_to_events`."
     required: false
-    default: ''
+    default: ""
   restrict_to_events:
     description: >-
       Comma-separated events to enforce on. Other events pass through without
       any API call. Use `*` to gate every event.
     required: false
-    default: 'workflow_dispatch'
+    default: "workflow_dispatch"
   required_teams:
-    description: 'Comma-separated team slugs whose active members are authorized. Empty disables the check.'
+    description: "Comma-separated team slugs whose active members are authorized. Empty disables the check."
     required: false
-    default: ''
+    default: ""
   required_repo_permission:
     description: >-
       Minimum repository permission: `read`, `triage`, `write`, `maintain`, or
       `admin`. Empty disables the check.
     required: false
-    default: ''
+    default: ""
   allow_org_admin:
-    description: 'Treat organization owners as authorized.'
+    description: "Treat organization owners as authorized."
     required: false
-    default: 'true'
+    default: "true"
   enterprise_slug:
     description: >-
       Enterprise slug for the owner lookup. Empty disables the check. Requires
       `enterprise_token`; see the README security note before enabling.
     required: false
-    default: ''
+    default: ""
   enterprise_token:
     description: >-
       PAT with `admin:enterprise` belonging to an enterprise owner. No GitHub
       App installation token can read `enterprise.ownerInfo`. Falls back to
       `token`.
     required: false
-    default: ''
+    default: ""
   require_enterprise_owner:
-    description: 'Only enterprise owners are authorized; every other check is ignored as a grant path.'
+    description: "Only enterprise owners are authorized; every other check is ignored as a grant path."
     required: false
-    default: 'false'
+    default: "false"
   require_all:
-    description: 'Require every enabled check to pass (AND). Default is any (OR).'
+    description: "Require every enabled check to pass (AND). Default is any (OR)."
     required: false
-    default: 'false'
+    default: "false"
   fail_closed:
     description: >-
       Fail the job when the actor is unauthorized or a signal is inconclusive.
       Set `false` to annotate without enforcing during rollout.
     required: false
-    default: 'true'
+    default: "true"
   summary:
-    description: 'Write the decision table to the job summary.'
+    description: "Write the decision table to the job summary."
     required: false
-    default: 'true'
+    default: "true"
   caller_workflow:
     description: >-
       Expected caller workflow file or workflow name. A mismatch emits a
       warning but does not fail unless caller_check_fail is true.
     required: false
-    default: ''
+    default: ""
   caller_repository:
-    description: 'Expected caller repository as `owner/repo`; empty skips the repository check.'
+    description: "Expected caller repository as `owner/repo`; empty skips the repository check."
     required: false
-    default: ''
+    default: ""
   caller_check_fail:
-    description: 'Fail when the configured caller identity does not match the running workflow.'
+    description: "Fail when the configured caller identity does not match the running workflow."
     required: false
-    default: 'false'
+    default: "false"
   suppress_caller_warning:
-    description: 'Suppress the notification emitted when the configured caller identity does not match.'
+    description: "Suppress the notification emitted when the configured caller identity does not match."
     required: false
-    default: 'false'
+    default: "false"
   handoff_workflow:
     description: >-
       Workflow file or workflow ID to dispatch after authorization. Empty
       disables handoff. A workflow is required when dispatch_handoff is true.
     required: false
-    default: ''
+    default: ""
   handoff_repository:
-    description: 'Repository receiving the workflow dispatch; defaults to the current repository.'
+    description: "Repository receiving the workflow dispatch; defaults to the current repository."
     required: false
-    default: ''
+    default: ""
   handoff_ref:
-    description: 'Git ref for the handoff workflow; defaults to the current ref.'
+    description: "Git ref for the handoff workflow; defaults to the current ref."
     required: false
-    default: ''
+    default: ""
   handoff_inputs:
     description: >-
       JSON object of `workflow_dispatch` inputs to forward to the handoff
       workflow, e.g. `{"mode":"check"}`. Values are coerced to strings, same
       as GitHub's own dispatch inputs. Empty dispatches with no inputs.
     required: false
-    default: ''
+    default: ""
   dispatch_handoff:
-    description: 'Dispatch the configured handoff workflow after authorization succeeds.'
+    description: "Dispatch the configured handoff workflow after authorization succeeds."
     required: false
-    default: 'false'
+    default: "false"
   handoff_audit:
     description: >-
       Before dispatching `handoff_workflow`, check whether it declares its own
@@ -146,22 +145,22 @@ inputs:
       fails the run when the target looks insecure; `off` skips the check
       (and its GitHub API call) entirely.
     required: false
-    default: 'warn'
+    default: "warn"
   preflight_spec:
     description: >-
       JSON dependency specification for runner preflight. Supports
       required_commands, min_versions, version_args, required_python_packages,
       and fail_on_missing. Empty skips capability checks.
     required: false
-    default: ''
+    default: ""
   preflight_gate_level:
-    description: 'Label shown in the preflight summary, such as low, standard, or high.'
+    description: "Label shown in the preflight summary, such as low, standard, or high."
     required: false
-    default: 'standard'
+    default: "standard"
   preflight_only:
-    description: 'Run only runner preflight and skip actor authorization. Intended for workflow orchestration.'
+    description: "Run only runner preflight and skip actor authorization. Intended for workflow orchestration."
     required: false
-    default: 'false'
+    default: "false"
   handoff_only:
     description: >-
       Dispatch (and audit) `handoff_workflow` and skip actor/organization
@@ -171,7 +170,7 @@ inputs:
       true` and a `token` with permission to dispatch workflows in
       `handoff_repository`.
     required: false
-    default: 'false'
+    default: "false"
   allowlist_config_path:
     description: >-
       Path to a local JSON file. When set, `allowlist_value` must appear in
@@ -179,7 +178,7 @@ inputs:
       agnostic: this repository's config schema is not baked in — point it
       at any JSON file. Empty (default) skips the check entirely.
     required: false
-    default: ''
+    default: ""
   allowlist_config_key:
     description: >-
       Dot-path to the array inside `allowlist_config_path`, e.g.
@@ -188,18 +187,18 @@ inputs:
       restriction") — this is an additive narrowing control layered on top
       of actor authorization, not a standalone boundary.
     required: false
-    default: ''
+    default: ""
   allowlist_value:
-    description: 'The value to check for membership in the configured allowlist, e.g. `${{ inputs.kicker }}`.'
+    description: "The value to check for membership in the configured allowlist, for example a workflow input value."
     required: false
-    default: ''
+    default: ""
   allowlist_only:
     description: >-
       Check `allowlist_value` against the config allowlist and skip actor,
       organization, and handoff entirely. For callers that only want this
       one policy primitive with nothing else attached.
     required: false
-    default: 'false'
+    default: "false"
   allowlist_fail_open:
     description: >-
       When the allowlist config is missing, invalid, or resolves to an
@@ -208,65 +207,65 @@ inputs:
       file itself is access-controlled (branch protection / CODEOWNERS) and
       a missing/corrupted file is more likely tampering than a rollout gap.
     required: false
-    default: 'true'
+    default: "true"
 
 outputs:
   authorized:
-    description: '`true` when the actor satisfied the policy.'
+    description: "`true` when the actor satisfied the policy."
     value: ${{ steps.gate.outputs.authorized }}
   reason:
-    description: 'Human-readable explanation of the decision.'
+    description: "Human-readable explanation of the decision."
     value: ${{ steps.gate.outputs.reason }}
   enforced:
-    description: '`false` when the event was outside `restrict_to_events` and no check ran.'
+    description: "`false` when the event was outside `restrict_to_events` and no check ran."
     value: ${{ steps.gate.outputs.enforced }}
   org_role:
-    description: 'admin, member, outside, or unknown.'
+    description: "admin, member, outside, or unknown."
     value: ${{ steps.gate.outputs.org_role }}
   teams:
-    description: 'Comma-separated matched team slugs.'
+    description: "Comma-separated matched team slugs."
     value: ${{ steps.gate.outputs.teams }}
   repo_permission:
-    description: 'Resolved repository permission, or unknown.'
+    description: "Resolved repository permission, or unknown."
     value: ${{ steps.gate.outputs.repo_permission }}
   enterprise_owner:
-    description: 'true, false, or unknown.'
+    description: "true, false, or unknown."
     value: ${{ steps.gate.outputs.enterprise_owner }}
   caller_valid:
-    description: '`true` when the configured caller identity matches; `unknown` when no caller check is configured.'
+    description: "`true` when the configured caller identity matches; `unknown` when no caller check is configured."
     value: ${{ steps.gate.outputs.caller_valid }}
   handoff_requested:
-    description: '`true` when a handoff workflow was configured.'
+    description: "`true` when a handoff workflow was configured."
     value: ${{ steps.gate.outputs.handoff_requested }}
   handoff_dispatched:
-    description: '`true` when the handoff workflow was dispatched successfully.'
+    description: "`true` when the handoff workflow was dispatched successfully."
     value: ${{ steps.gate.outputs.handoff_dispatched }}
   handoff_workflow:
-    description: 'Workflow file or ID selected for the handoff.'
+    description: "Workflow file or ID selected for the handoff."
     value: ${{ steps.gate.outputs.handoff_workflow }}
   handoff_repository:
-    description: 'Repository selected for the handoff.'
+    description: "Repository selected for the handoff."
     value: ${{ steps.gate.outputs.handoff_repository }}
   handoff_ref:
-    description: 'Git ref selected for the handoff.'
+    description: "Git ref selected for the handoff."
     value: ${{ steps.gate.outputs.handoff_ref }}
   handoff_audit_status:
-    description: '`secure`, `insecure`, `unknown`, or `skipped` (handoff_audit was off, or no handoff was requested).'
+    description: "`secure`, `insecure`, `unknown`, or `skipped` (handoff_audit was off, or no handoff was requested)."
     value: ${{ steps.gate.outputs.handoff_audit_status }}
   handoff_audit_reason:
-    description: 'Human-readable explanation of the handoff audit result.'
+    description: "Human-readable explanation of the handoff audit result."
     value: ${{ steps.gate.outputs.handoff_audit_reason }}
   allowlist_status:
-    description: '`allowed`, `denied`, `unrestricted`, `unknown`, or `skipped` (allowlist_config_path was empty).'
+    description: "`allowed`, `denied`, `unrestricted`, `unknown`, or `skipped` (allowlist_config_path was empty)."
     value: ${{ steps.gate.outputs.allowlist_status }}
   allowlist_reason:
-    description: 'Human-readable explanation of the allowlist check result.'
+    description: "Human-readable explanation of the allowlist check result."
     value: ${{ steps.gate.outputs.allowlist_reason }}
   preflight_satisfied:
-    description: '`true` when every declared runner requirement was met.'
+    description: "`true` when every declared runner requirement was met."
     value: ${{ steps.preflight.outputs.preflight_satisfied }}
   preflight_missing:
-    description: 'Comma-separated list of unmet runner requirements.'
+    description: "Comma-separated list of unmet runner requirements."
     value: ${{ steps.preflight.outputs.preflight_missing }}
 
 runs:

@@ -109,11 +109,11 @@ def main() -> int:
     mode.add_argument("--write", action="store_true", help="rewrite README in place")
     args = parser.parse_args()
 
-    action = yaml.safe_load(ACTION_YML.read_text())
+    action = yaml.safe_load(ACTION_YML.read_text(encoding="utf-8"))
     inputs_body = render_inputs(action)
     outputs_body = render_outputs(action)
 
-    current = README.read_text()
+    current = README.read_text(encoding="utf-8")
     updated = _replace_block(current, INPUTS_BEGIN, INPUTS_END, inputs_body)
     updated = _replace_block(updated, OUTPUTS_BEGIN, OUTPUTS_END, outputs_body)
 
@@ -121,7 +121,7 @@ def main() -> int:
         if updated == current:
             print("render_readme_inputs: already up to date")
             return 0
-        README.write_text(updated)
+        README.write_text(updated, encoding="utf-8")
         print("render_readme_inputs: README.md updated")
         return 0
 
