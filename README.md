@@ -138,6 +138,7 @@ reproducible supply chain:
 | Input | Default | Description |
 | --- | --- | --- |
 | `actor` | *(none)* | Login to authorize. Use `github.triggering_actor`, not `github.actor` — on a re-run `actor` stays the original dispatcher while `triggering_actor` is whoever pressed re-run. |
+| `trusted_app_slugs` | *(none)* | Comma-separated GitHub App slugs trusted for protected machine handoffs. An actor must exactly match `<slug>[bot]`; empty disables this grant path. Trusted Apps are not treated as organization members. |
 | `organization` | *(none)* | Organization login that owns the repository. |
 | `token` | *(none)* | Credential for organization, team, and repository lookups. Prefer a GitHub App installation token with `members: read` (short-lived). A PAT with `read:org` also works. The default GITHUB_TOKEN cannot resolve organization role, team membership, or enterprise ownership. |
 | `repository` | *(none)* | `owner/repo` for the repository-permission check. Required only when `required_repo_permission` is set. |
@@ -168,7 +169,7 @@ reproducible supply chain:
 | `handoff_only` | `false` | Dispatch (and audit) `handoff_workflow` and skip actor/organization authorization entirely. For system-triggered dynamic chaining — schedule or push callers with no human actor to authorize — that still wants the `handoff_audit` security check. Requires `dispatch_handoff: true` and a `token` with permission to dispatch workflows in `handoff_repository`. |
 | `allowlist_config_path` | *(none)* | Path to a local JSON file. When set, `allowlist_value` must appear in the array at `allowlist_config_key`, or the run is denied. Domain- agnostic: this repository's config schema is not baked in — point it at any JSON file. Empty (default) skips the check entirely. |
 | `allowlist_config_key` | *(none)* | Dot-path to the array inside `allowlist_config_path`, e.g. `organization.kicker_fanout.enabled_kickers`. A missing path, invalid JSON, or an empty/non-array value fails OPEN (treated as "no restriction") — this is an additive narrowing control layered on top of actor authorization, not a standalone boundary. |
-| `allowlist_value` | *(none)* | The value to check for membership in the configured allowlist, e.g. `${{ inputs.kicker }}`. |
+| `allowlist_value` | *(none)* | The value to check for membership in the configured allowlist, for example a workflow input value. |
 | `allowlist_only` | `false` | Check `allowlist_value` against the config allowlist and skip actor, organization, and handoff entirely. For callers that only want this one policy primitive with nothing else attached. |
 | `allowlist_fail_open` | `true` | When the allowlist config is missing, invalid, or resolves to an empty/non-array value, `true` (default) treats it as unrestricted and allows the run; `false` denies it instead. Set `false` when the config file itself is access-controlled (branch protection / CODEOWNERS) and a missing/corrupted file is more likely tampering than a rollout gap. |
 <!-- END action-inputs -->
@@ -728,3 +729,15 @@ python3 scripts/render_readme_inputs.py --check
 ## 📜 License
 
 Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+<!-- >>> managed-file-sync:security_readme_pointer >>> -->
+## Security & secrets
+
+This repository is built with Blackout Secure's reusable GitHub Actions
+workflows. If you fork or self-host these workflows and need to provision
+your own credentials (GitHub App vs. PAT guidance, secret tiers, Docker
+Hub/Cloudflare/Balena setup walkthroughs), see the
+["Secrets pipelining strategy"](https://github.com/blackoutsecure/bos-automation-hub#secrets-pipelining-strategy)
+section of `bos-automation-hub`. To report a vulnerability, see
+[SECURITY.md](https://github.com/blackoutsecure/.github/blob/main/SECURITY.md).
+<!-- <<< managed-file-sync:security_readme_pointer <<< -->

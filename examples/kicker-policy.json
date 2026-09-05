@@ -1,5 +1,0 @@
-{
-  "kicker": {
-    "enabled_operations": ["deploy", "maintenance"]
-  }
-}
