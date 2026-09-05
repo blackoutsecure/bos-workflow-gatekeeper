@@ -21,6 +21,13 @@ inputs:
       `triggering_actor` is whoever pressed re-run.
     required: false
     default: ""
+  trusted_app_slugs:
+    description: >-
+      Comma-separated GitHub App slugs trusted for protected machine handoffs.
+      An actor must exactly match `<slug>[bot]`; empty disables this grant path.
+      Trusted Apps are not treated as organization members.
+    required: false
+    default: ""
   organization:
     description: "Organization login that owns the repository."
     required: false
@@ -288,6 +295,7 @@ runs:
       shell: bash
       env:
         ACTOR: ${{ inputs.actor }}
+        TRUSTED_APP_SLUGS: ${{ inputs.trusted_app_slugs }}
         ORGANIZATION: ${{ inputs.organization }}
         TOKEN: ${{ inputs.token }}
         REPOSITORY: ${{ inputs.repository || github.repository }}

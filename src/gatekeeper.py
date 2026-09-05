@@ -7,7 +7,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 
-from policy import Policy, evaluate
+from policy import Policy, Signals, evaluate, is_trusted_app_actor
 from runtime import append_github_output, append_step_summary, env_bool, env_csv
 from signals import Client, gather
 
@@ -265,6 +265,7 @@ def main() -> int:
     restrict = _csv("RESTRICT_TO_EVENTS")
     fail_closed = _bool("FAIL_CLOSED", True)
     actor = os.environ.get("ACTOR", "").strip()
+    trusted_app_slugs = _csv("TRUSTED_APP_SLUGS")
     organization = os.environ.get("ORGANIZATION", "").strip()
     token = os.environ.get("TOKEN", "")
     caller_state, caller_reason = _caller_valid()
@@ -289,9 +290,11 @@ def main() -> int:
         enterprise_enabled=bool(os.environ.get("ENTERPRISE_SLUG", "").strip()),
         require_enterprise_owner=_bool("REQUIRE_ENTERPRISE_OWNER", False),
         require_all=_bool("REQUIRE_ALL", False),
+        trusted_app_slugs=trusted_app_slugs,
     )
 
-    if not actor or not organization or (not token and (policy.allow_org_admin or policy.required_teams or policy.required_repo_permission or policy.enterprise_enabled or handoff.dispatch)):
+    trusted_app = is_trusted_app_actor(actor, trusted_app_slugs)
+    if not actor or not organization or (not token and ((not trusted_app) or handoff.dispatch) and (policy.allow_org_admin or policy.required_teams or policy.required_repo_permission or policy.enterprise_enabled or handoff.dispatch)):
         missing = "actor" if not actor else ("organization" if not organization else "token")
         reason = (
             f"Missing required input: {missing}. The default GITHUB_TOKEN cannot resolve "
@@ -305,7 +308,7 @@ def main() -> int:
         token=token,
         enterprise_token=os.environ.get("ENTERPRISE_TOKEN", ""),
     )
-    resolved = gather(
+    resolved = Signals() if trusted_app else gather(
         client,
         actor=actor,
         organization=organization,
@@ -315,7 +318,7 @@ def main() -> int:
         need_org_role=policy.allow_org_admin,
         need_repo_permission=bool(policy.required_repo_permission),
     )
-    decision = evaluate(resolved, policy)
+    decision = evaluate(resolved, policy, actor)
     allowlist_status, allowlist_reason = _allowlist_check()
     if allowlist_status == "denied":
         return _finish(

@@ -44,6 +44,7 @@ class Policy:
     enterprise_enabled: bool = False
     require_enterprise_owner: bool = False
     require_all: bool = False
+    trusted_app_slugs: tuple[str, ...] = ()
 
 
 @dataclass
@@ -81,7 +82,12 @@ def _check_enterprise(signals: Signals) -> bool | None:
     return signals.enterprise_owner == "true"
 
 
-def evaluate(signals: Signals, policy: Policy) -> Decision:
+def is_trusted_app_actor(actor: str, trusted_app_slugs: tuple[str, ...]) -> bool:
+    """Return whether ``actor`` is exactly one configured App bot identity."""
+    return actor.endswith("[bot]") and actor[:-5] in trusted_app_slugs
+
+
+def evaluate(signals: Signals, policy: Policy, actor: str = "") -> Decision:
     """Resolve signals plus policy into an allow/deny decision.
 
     `None` in `checks` means the signal was unresolvable. An unresolved check
@@ -89,6 +95,17 @@ def evaluate(signals: Signals, policy: Policy) -> Decision:
     "we could not tell" must never read as "permitted".
     """
     checks: dict[str, bool | None] = {}
+
+    if actor.endswith("[bot]"):
+        if policy.require_all:
+            return Decision(
+                False,
+                "Trusted App authorization is disabled in require_all mode.",
+                {"trusted_app": None},
+            )
+        if is_trusted_app_actor(actor, policy.trusted_app_slugs):
+            return Decision(True, "Actor is a configured trusted GitHub App.", {"trusted_app": True})
+        return Decision(False, "GitHub App actor is not in the trusted App slug allowlist.", {"trusted_app": False})
 
     if policy.allow_org_admin:
         checks["org_admin"] = _check_org_admin(signals)

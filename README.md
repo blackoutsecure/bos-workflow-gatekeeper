@@ -138,6 +138,7 @@ reproducible supply chain:
 | Input | Default | Description |
 | --- | --- | --- |
 | `actor` | *(none)* | Login to authorize. Use `github.triggering_actor`, not `github.actor` — on a re-run `actor` stays the original dispatcher while `triggering_actor` is whoever pressed re-run. |
+| `trusted_app_slugs` | *(none)* | Comma-separated GitHub App slugs trusted for protected machine handoffs. An actor must exactly match `<slug>[bot]`; empty disables this grant path. Trusted Apps are not treated as organization members. |
 | `organization` | *(none)* | Organization login that owns the repository. |
 | `token` | *(none)* | Credential for organization, team, and repository lookups. Prefer a GitHub App installation token with `members: read` (short-lived). A PAT with `read:org` also works. The default GITHUB_TOKEN cannot resolve organization role, team membership, or enterprise ownership. |
 | `repository` | *(none)* | `owner/repo` for the repository-permission check. Required only when `required_repo_permission` is set. |

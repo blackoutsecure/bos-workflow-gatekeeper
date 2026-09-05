@@ -178,3 +178,34 @@ def test_every_signal_unknown_denies():
     )
     assert decision.authorized is False
     assert all(v is None for v in decision.checks.values())
+
+
+def test_exact_trusted_app_actor_authorizes_without_org_membership():
+    decision = evaluate(
+        Signals(),
+        Policy(trusted_app_slugs=("blackoutsecure-gatewall-aut-c172c5",)),
+        "blackoutsecure-gatewall-aut-c172c5[bot]",
+    )
+    assert decision.authorized is True
+
+
+@pytest.mark.parametrize("actor", ["blackoutsecure-gatewall-aut-c172c5-extra[bot]", "other-app[bot]"])
+def test_untrusted_or_malformed_app_actor_denies(actor):
+    decision = evaluate(
+        Signals(org_role="admin"),
+        Policy(trusted_app_slugs=("blackoutsecure-gatewall-aut-c172c5",)),
+        actor,
+    )
+    assert decision.authorized is False
+
+
+def test_trusted_app_shortcut_is_disabled_in_require_all_mode():
+    decision = evaluate(
+        Signals(),
+        Policy(
+            require_all=True,
+            trusted_app_slugs=("blackoutsecure-gatewall-aut-c172c5",),
+        ),
+        "blackoutsecure-gatewall-aut-c172c5[bot]",
+    )
+    assert decision.authorized is False

@@ -10,7 +10,7 @@ from policy import Signals
 def _clean_env(monkeypatch, tmp_path):
     for key in list(gatekeeper.os.environ):
         if key in {
-            "EVENT_NAME", "RESTRICT_TO_EVENTS", "FAIL_CLOSED", "ACTOR", "ORGANIZATION",
+            "EVENT_NAME", "RESTRICT_TO_EVENTS", "FAIL_CLOSED", "ACTOR", "TRUSTED_APP_SLUGS", "ORGANIZATION",
             "TOKEN", "REQUIRED_TEAMS", "ALLOW_ORG_ADMIN", "REQUIRE_ALL",
             "REQUIRE_ENTERPRISE_OWNER", "ENTERPRISE_SLUG", "REQUIRED_REPO_PERMISSION",
             "REPOSITORY", "SUMMARY",
@@ -76,6 +76,25 @@ def test_authorized_path_exits_zero(monkeypatch, tmp_path):
     monkeypatch.setattr(gatekeeper, "gather", lambda *a, **k: Signals(org_role="admin"))
     assert gatekeeper.main() == 0
     assert outputs(tmp_path)["authorized"] == "true"
+
+
+def test_trusted_app_actor_authorizes_without_api_token(monkeypatch, tmp_path):
+    monkeypatch.setenv("EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("ACTOR", "blackoutsecure-gatewall-aut-c172c5[bot]")
+    monkeypatch.setenv("TRUSTED_APP_SLUGS", "blackoutsecure-gatewall-aut-c172c5")
+    monkeypatch.setenv("ORGANIZATION", "blackoutsecure")
+    assert gatekeeper.main() == 0
+    assert outputs(tmp_path)["authorized"] == "true"
+
+
+def test_untrusted_app_actor_denies(monkeypatch, tmp_path):
+    monkeypatch.setenv("EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("ACTOR", "other-app[bot]")
+    monkeypatch.setenv("TRUSTED_APP_SLUGS", "blackoutsecure-gatewall-aut-c172c5")
+    monkeypatch.setenv("ORGANIZATION", "blackoutsecure")
+    monkeypatch.setenv("TOKEN", "x")
+    assert gatekeeper.main() == 1
+    assert outputs(tmp_path)["authorized"] == "false"
 
 
 def test_bool_parsing_accepts_common_spellings(monkeypatch):
