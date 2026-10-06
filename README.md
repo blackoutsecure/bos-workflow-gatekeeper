@@ -47,6 +47,7 @@ authorized.
   - [📤 Action outputs](#-action-outputs)
   - [🧰 Runner preflight](#-runner-preflight)
   - [🔗 Workflow handoff](#-workflow-handoff)
+    - [Infrastructure requester integration](#infrastructure-requester-integration)
     - [Auditing the handoff target](#auditing-the-handoff-target)
     - [Dynamic chaining with no human actor](#dynamic-chaining-with-no-human-actor)
   - [📋 Config-driven allowlists](#-config-driven-allowlists)
@@ -65,11 +66,13 @@ authorized.
 
 ## 📋 Prerequisites
 
-- A credential that can read organization membership when an authorization
-  check is enabled. The token input is optional for pass-through events and
+- A credential that can read organization membership when an organization
+  check is enabled. Repository-only checks instead use a
+  repository-scoped token; see [Infrastructure requester integration](#infrastructure-requester-integration).
+  The token input is optional for pass-through events and
   caller-only validation, but a gated policy that needs API evidence fails
   closed without one.
-- A GitHub App with `Organization permissions → Members: Read-only`
+- For organization/team checks, a GitHub App with `Organization permissions → Members: Read-only`
   (recommended), or a PAT with `read:org`.
 - For the optional enterprise check only: a PAT with `admin:enterprise`
   belonging to an enterprise owner. See
@@ -265,6 +268,55 @@ not fail the job. Set `caller_check_fail: true` for strict enforcement, or
 
 An empty `handoff_workflow` with `dispatch_handoff: true` is always an error.
 Authorization is evaluated first; no handoff occurs after a denial.
+
+### Infrastructure requester integration
+
+The hub's
+[opt-in infrastructure executor](https://github.com/blackoutsecure/bos-automation-hub/blob/dev/README.md#opt-in-infrastructure-execution)
+uses this action as its actor authority. The private infrastructure repository
+owns desired state, protected environments and one-use reviewed plans; a portal
+only requests operations. Gatekeeper neither receives provider/state credentials
+nor acts as a human environment approver.
+
+Its repository-scoped policy uses the existing released inputs:
+
+```yaml
+- id: gate
+  uses: blackoutsecure/bos-workflow-gatekeeper@c06e9fa7a60a75a3a1c8a8913b361fc39fc7dc35 # v1.0.3
+  with:
+    actor: ${{ github.triggering_actor || github.actor }}
+    organization: ${{ github.repository_owner }}
+    repository: ${{ github.repository }}
+    token: ${{ github.token }}
+    required_repo_permission: write
+    allow_org_admin: "false"
+    trusted_app_slugs: ${{ vars.CLOUD_COMPASS_APP_SLUG }}
+    restrict_to_events: "*"
+    fail_closed: "true"
+```
+
+The hub validates that the portal setting is empty or one exact App slug, not a
+list or a login with `[bot]` already appended. An empty setting disables machine
+requests; an unlisted bot cannot fall back to a repository role. Humans require
+repository `write`, `maintain` or `admin`. No organization/team lookup or
+Members-read App is needed for this policy; those checks remain available to
+other callers that explicitly configure them.
+
+The authorization job has only `contents: read` and no provider secrets.
+Execution depends on that job and requires both `authorized=true` and
+`enforced=true`. It repeats the gate before credential use because GitHub
+job-only reruns may reuse another actor's earlier successful authorization job.
+Scheduled read-only drift is enforced too, not marked passed through an event
+exemption. GitHub required reviewers, disabled administrator bypass and exact
+deployment branch controls remain additional checks owned by the hub/caller.
+
+Use separate selected-repository Apps for private application checkout and
+portal dispatch. The [organization App setup](app-setup/) is not a substitute
+for those purpose-scoped profiles, and its permissions must not be widened.
+
+The best-effort `handoff_audit` text scan does not follow reusable workflows or
+nested composite actions. This integration relies on the reviewed hub workflow
+and its enforced dependency graph, not on interpreting that scan as proof.
 
 ### Auditing the handoff target
 
