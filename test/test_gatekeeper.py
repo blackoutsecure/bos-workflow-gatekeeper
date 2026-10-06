@@ -93,8 +93,106 @@ def test_untrusted_app_actor_denies(monkeypatch, tmp_path):
     monkeypatch.setenv("TRUSTED_APP_SLUGS", "blackoutsecure-gatewall-aut-c172c5")
     monkeypatch.setenv("ORGANIZATION", "blackoutsecure")
     monkeypatch.setenv("TOKEN", "x")
+    monkeypatch.setattr(gatekeeper, "gather", lambda *a, **k: Signals(org_role="admin"))
     assert gatekeeper.main() == 1
     assert outputs(tmp_path)["authorized"] == "false"
+
+
+@pytest.fixture
+def infrastructure_policy(monkeypatch):
+    for key, value in {
+        "EVENT_NAME": "workflow_dispatch",
+        "RESTRICT_TO_EVENTS": "*",
+        "ACTOR": "operator",
+        "ORGANIZATION": "acme",
+        "REPOSITORY": "acme/infrastructure",
+        "TOKEN": "offline-repository-token",
+        "ALLOW_ORG_ADMIN": "false",
+        "REQUIRED_REPO_PERMISSION": "write",
+        "TRUSTED_APP_SLUGS": "acme-compass",
+        "FAIL_CLOSED": "true",
+    }.items():
+        monkeypatch.setenv(key, value)
+
+
+@pytest.mark.parametrize(
+    ("status", "payload", "allowed"),
+    [
+        (200, {"permission": "write"}, True),
+        (200, {"role_name": "maintain", "permission": "write"}, True),
+        (200, {"permission": "admin"}, True),
+        (200, {"permission": "read"}, False),
+        (200, {"role_name": "triage", "permission": "write"}, False),
+        (200, {"permission": "unknown"}, False),
+        (200, {}, False),
+        (200, [], False),
+        (403, None, False),
+        (404, None, False),
+        (500, None, False),
+        (0, None, False),
+    ],
+)
+def test_infrastructure_repository_policy_uses_no_org_or_dispatch_authority(
+    monkeypatch, tmp_path, infrastructure_policy, status, payload, allowed,
+):
+    calls = []
+
+    def request(self, url, *, data=None, token=None):
+        calls.append(url)
+        assert url == "https://api.github.com/repos/acme/infrastructure/collaborators/operator/permission"
+        assert data is None
+        return status, payload
+
+    monkeypatch.setattr(gatekeeper.Client, "request", request)
+    assert gatekeeper.main() == (0 if allowed else 1)
+    assert outputs(tmp_path)["authorized"] == str(allowed).lower()
+    assert outputs(tmp_path)["enforced"] == "true"
+    assert len(calls) == 1
+
+
+def test_infrastructure_exact_app_requires_no_members_token(
+    monkeypatch, tmp_path, infrastructure_policy,
+):
+    monkeypatch.setenv("ACTOR", "acme-compass[bot]")
+    monkeypatch.delenv("TOKEN")
+
+    def unexpected_request(*args, **kwargs):
+        raise AssertionError("An exact trusted App needs no membership or dispatch lookup.")
+
+    monkeypatch.setattr(gatekeeper.Client, "request", unexpected_request)
+    assert gatekeeper.main() == 0
+    result = outputs(tmp_path)
+    assert result["authorized"] == result["enforced"] == "true"
+    assert result["handoff_dispatched"] == "false"
+
+
+@pytest.mark.parametrize("actor", ["unlisted[bot]", "acme-compass-other[bot]"])
+def test_infrastructure_unlisted_bot_cannot_use_repository_write_as_fallback(
+    monkeypatch, tmp_path, infrastructure_policy, actor,
+):
+    monkeypatch.setenv("ACTOR", actor)
+    monkeypatch.setattr(gatekeeper.Client, "request", lambda *args, **kwargs: (200, {"permission": "admin"}))
+    assert gatekeeper.main() == 1
+    assert outputs(tmp_path)["authorized"] == "false"
+
+
+@pytest.mark.parametrize("event", ["workflow_dispatch", "schedule"])
+def test_infrastructure_rerun_actor_is_enforced_even_for_scheduled_drift(
+    monkeypatch, tmp_path, infrastructure_policy, event,
+):
+    monkeypatch.setenv("EVENT_NAME", event)
+    monkeypatch.setenv("GITHUB_ACTOR", "original-owner")
+    monkeypatch.setenv("GITHUB_TRIGGERING_ACTOR", "reader")
+    monkeypatch.setenv("ACTOR", "reader")
+
+    def request(self, url, *, data=None, token=None):
+        assert url.endswith("/collaborators/reader/permission")
+        return 200, {"permission": "read"}
+
+    monkeypatch.setattr(gatekeeper.Client, "request", request)
+    assert gatekeeper.main() == 1
+    assert outputs(tmp_path)["authorized"] == "false"
+    assert outputs(tmp_path)["enforced"] == "true"
 
 
 def test_bool_parsing_accepts_common_spellings(monkeypatch):
