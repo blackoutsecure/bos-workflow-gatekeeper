@@ -18,7 +18,7 @@ def test_empty_spec_succeeds(monkeypatch, tmp_path):
     output, _ = set_outputs(monkeypatch, tmp_path)
     monkeypatch.delenv("PREFLIGHT_SPEC", raising=False)
     assert preflight.main() == 0
-    assert "preflight_satisfied=true" in output.read_text()
+    assert "preflight_satisfied=true" in output.read_text(encoding="utf-8")
 
 
 def test_invalid_spec_fails(monkeypatch, tmp_path):
@@ -34,9 +34,9 @@ def test_missing_command_fails_closed(monkeypatch, tmp_path):
         json.dumps({"required_commands": ["command-that-does-not-exist"]}),
     )
     assert preflight.main() == 1
-    assert "preflight_satisfied=false" in output.read_text()
-    assert "command:command-that-does-not-exist" in output.read_text()
-    assert "Gatekeeper preflight" in summary.read_text()
+    assert "preflight_satisfied=false" in output.read_text(encoding="utf-8")
+    assert "command:command-that-does-not-exist" in output.read_text(encoding="utf-8")
+    assert "Gatekeeper preflight" in summary.read_text(encoding="utf-8")
 
 
 def test_missing_requirement_can_warn(monkeypatch, tmp_path):
@@ -51,7 +51,7 @@ def test_missing_requirement_can_warn(monkeypatch, tmp_path):
         ),
     )
     assert preflight.main() == 0
-    assert "preflight_satisfied=false" in output.read_text()
+    assert "preflight_satisfied=false" in output.read_text(encoding="utf-8")
 
 
 def test_preflight_rejects_unsafe_command_spec(monkeypatch, tmp_path):
